@@ -2337,6 +2337,7 @@ async function initSupabase() {
 // ===========================================
 
 async function saveTestRecord() {
+  if (!supabase) await initSupabase();
   const now = new Date().toISOString();
 
   const record = {
