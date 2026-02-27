@@ -2383,7 +2383,7 @@ window.addEventListener('load', async ()=>{
   try { await initSupabase(); }
   catch(e){ console.error('❌ Supabase init failed:', e); }
 
-  // 기존 코드 그대로
+  // 1) version pill 이동(기존 로직)
   try{
     const vb = document.getElementById('versionPill');
     const sb = document.getElementById('settingsBtn');
@@ -2392,6 +2392,29 @@ window.addEventListener('load', async ()=>{
       sb.appendChild(vb);
     }
   }catch(_e){}
+  
+  // 2) ✅ 저장 버튼 이벤트는 항상 등록
+  const saveBtn = document.getElementById('saveMiniBtn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        try {
+          await saveTestRecord(); // ✅ 이미 있는 함수 사용
+          // 간단 피드백(알림 대신 버튼 텍스트 잠깐 변경)
+          const txt = saveBtn.querySelector('.btnTxt');
+          if (txt) {
+            const prev = txt.textContent;
+            txt.textContent = 'SAVED';
+            setTimeout(() => (txt.textContent = prev), 900);
+          }
+        } catch (e) {
+          console.error(e);
+          alert('저장 실패 (콘솔 확인)');
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    }
 });
 
 
