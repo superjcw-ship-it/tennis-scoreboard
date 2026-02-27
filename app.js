@@ -2337,21 +2337,6 @@ async function initSupabase() {
 }
 // ===========================================
 
-window.addEventListener('load', async ()=>{
-  try { await initSupabase(); }
-  catch(e){ console.error('❌ Supabase init failed:', e); }
-
-  // 기존 코드 그대로
-  try{
-    const vb = document.getElementById('versionPill');
-    const sb = document.getElementById('settingsBtn');
-    if(vb && sb && vb.parentElement !== sb){
-      sb.style.position = 'relative';
-      sb.appendChild(vb);
-    }
-  }catch(_e){}
-});
-
 async function saveTestRecord() {
   const now = new Date().toISOString();
 
@@ -2380,3 +2365,20 @@ async function saveTestRecord() {
   if (error) throw error;
   console.log("✅ insert ok");
 }
+
+window.addEventListener('load', async ()=>{
+  try { await initSupabase(); }
+  catch(e){ console.error('❌ Supabase init failed:', e); }
+
+  // 기존 코드 그대로
+  try{
+    const vb = document.getElementById('versionPill');
+    const sb = document.getElementById('settingsBtn');
+    if(vb && sb && vb.parentElement !== sb){
+      sb.style.position = 'relative';
+      sb.appendChild(vb);
+    }
+  }catch(_e){}
+});
+
+
