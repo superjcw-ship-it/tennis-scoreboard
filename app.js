@@ -2316,15 +2316,32 @@ setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 })()
 })();
 
-window.addEventListener('load', async ()=>{
-  // ✅ 1) 여기 한 줄 추가 (맨 앞)
-  try{
-    await initSupabase();
-  }catch(e){
-    console.error('❌ Supabase init failed:', e);
+// ===== Supabase init (from /api/config) =====
+let supabase = null;
+
+async function initSupabase() {
+  const res = await fetch("/api/config", { cache: "no-store" });
+  if (!res.ok) throw new Error(`/api/config failed: ${res.status}`);
+  const cfg = await res.json();
+
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+  supabase = createClient(cfg.url, cfg.key);
+
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
   }
 
-  // v22.21: place version badge inside settings button (top-right)
+  console.log("✅ Supabase ready");
+}
+// ===========================================
+
+window.addEventListener('load', async ()=>{
+  try { await initSupabase(); }
+  catch(e){ console.error('❌ Supabase init failed:', e); }
+
+  // 기존 코드 그대로
   try{
     const vb = document.getElementById('versionPill');
     const sb = document.getElementById('settingsBtn');
