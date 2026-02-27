@@ -2365,6 +2365,20 @@ async function saveTestRecord() {
   console.log("✅ insert ok");
 }
 
+async function loadRecentRecords(limit = 10) {
+  if (!supabase) await initSupabase();
+
+  const { data, error } = await supabase
+    .from("match_records")
+    .select("id, created_at, app_version, data")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  console.log("✅ recent records:", data);
+  return data;
+}
+
 window.addEventListener('load', async ()=>{
   try { await initSupabase(); }
   catch(e){ console.error('❌ Supabase init failed:', e); }
