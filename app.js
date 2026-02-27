@@ -739,6 +739,14 @@ function wireResetChoiceModal(){
 
   let state = loadState();
   let undoHistory = loadUndoHistory();
+  // ✅ Cloud save용: 현재 경기 상태 스냅샷 노출
+  try{
+    window.__TS_SNAPSHOT = () => ({
+      app_version: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : (window.__TS_APP_VERSION || null)),
+      state: JSON.parse(JSON.stringify(state)),
+      undoHistory: JSON.parse(JSON.stringify(undoHistory))
+    });
+  }catch(_e){}
 
   // ---------- Helpers ----------
   function bestOfWinTarget(bestOf){ return Math.floor(bestOf/2)+1; }
@@ -2338,32 +2346,33 @@ async function initSupabase() {
 
 async function saveTestRecord() {
   if (!supabase) await initSupabase();
+
+  const snapFn = window.__TS_SNAPSHOT;
+  if (typeof snapFn !== 'function') {
+    throw new Error('상태 스냅샷 함수(__TS_SNAPSHOT)를 찾지 못했습니다.');
+  }
+
+  const snap = snapFn();
   const now = new Date().toISOString();
 
+  // ✅ 실제 저장되는 데이터(현재 경기 설정+점수+서브+타이브레이크+코트스왑+히스토리/undo 포함)
   const record = {
     schema_version: "match_v1",
-    match: {
-      match_id: (crypto.randomUUID?.() ?? `local-${Date.now()}`),
-      started_at: now,
-      ended_at: null,
-      mode: "doubles",
-      best_of: 3,
-      rules: { tiebreak_at_6_6: true, final_set_tiebreak: true }
-    },
-    teams: {
-      A: { name: "A팀", players: ["A1", "A2"] },
-      B: { name: "B팀", players: ["B1", "B2"] }
-    },
-    log: { events: [] },
-    result: { winner: null, final_sets: null, duration_sec: null }
+    saved_at: now,
+    app_version: snap.app_version,
+    state: snap.state,
+    undoHistory: snap.undoHistory
   };
 
   const { error } = await supabase
     .from("match_records")
-    .insert({ app_version: "v-test", data: record });
+    .insert({
+      app_version: snap.app_version || "v-unknown",
+      data: record
+    });
 
   if (error) throw error;
-  console.log("✅ insert ok");
+  console.log("✅ insert ok (current state saved)");
 }
 
 async function loadRecentRecords(limit = 10) {
