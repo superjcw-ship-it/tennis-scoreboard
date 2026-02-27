@@ -2351,3 +2351,32 @@ window.addEventListener('load', async ()=>{
     }
   }catch(_e){}
 });
+
+async function saveTestRecord() {
+  const now = new Date().toISOString();
+
+  const record = {
+    schema_version: "match_v1",
+    match: {
+      match_id: (crypto.randomUUID?.() ?? `local-${Date.now()}`),
+      started_at: now,
+      ended_at: null,
+      mode: "doubles",
+      best_of: 3,
+      rules: { tiebreak_at_6_6: true, final_set_tiebreak: true }
+    },
+    teams: {
+      A: { name: "A팀", players: ["A1", "A2"] },
+      B: { name: "B팀", players: ["B1", "B2"] }
+    },
+    log: { events: [] },
+    result: { winner: null, final_sets: null, duration_sec: null }
+  };
+
+  const { error } = await supabase
+    .from("match_records")
+    .insert({ app_version: "v-test", data: record });
+
+  if (error) throw error;
+  console.log("✅ insert ok");
+}
