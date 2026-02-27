@@ -1,3 +1,27 @@
+// --- Supabase init (from /api/config) ---
+let supabase = null;
+
+async function initSupabase() {
+  // 1) config 가져오기
+  const res = await fetch("/api/config", { cache: "no-store" });
+  if (!res.ok) throw new Error(`/api/config failed: ${res.status}`);
+  const cfg = await res.json();
+  if (!cfg.url || !cfg.key) throw new Error("Missing url/key from /api/config");
+
+  // 2) supabase-js 로드 + client 생성
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+  supabase = createClient(cfg.url, cfg.key);
+
+  // 3) 익명 로그인 세션 확보
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+  }
+
+  console.log("✅ Supabase ready:", cfg.url);
+}
+// ---------------------------------------
 
 function updateSettingsVersionText(){
   try{
@@ -2292,7 +2316,14 @@ setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 })()
 })();
 
-window.addEventListener('load', ()=>{
+window.addEventListener('load', async ()=>{
+  // ✅ 1) 여기 한 줄 추가 (맨 앞)
+  try{
+    await initSupabase();
+  }catch(e){
+    console.error('❌ Supabase init failed:', e);
+  }
+
   // v22.21: place version badge inside settings button (top-right)
   try{
     const vb = document.getElementById('versionPill');
