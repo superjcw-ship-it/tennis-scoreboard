@@ -2317,7 +2317,6 @@ setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 })();
 
 // ===== Supabase init (from /api/config) =====
-let supabase = null;
 
 async function initSupabase() {
   const res = await fetch("/api/config", { cache: "no-store" });
