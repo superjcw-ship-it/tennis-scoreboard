@@ -2347,11 +2347,6 @@ async function initSupabase() {
 async function saveTestRecord() {
   if (!supabase) await initSupabase();
 
-  const snapFn = window.__TS_SNAPSHOT;
-  if (typeof snapFn !== 'function') {
-    throw new Error('상태 스냅샷 함수(__TS_SNAPSHOT)를 찾지 못했습니다.');
-  }
-
   const now = new Date().toISOString();
 
   const snapFn = window.__TS_SNAPSHOT;
