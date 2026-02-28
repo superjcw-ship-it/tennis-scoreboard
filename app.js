@@ -2352,10 +2352,14 @@ async function saveTestRecord() {
     throw new Error('상태 스냅샷 함수(__TS_SNAPSHOT)를 찾지 못했습니다.');
   }
 
-  const snap = snapFn();
   const now = new Date().toISOString();
 
-  // ✅ 실제 저장되는 데이터(현재 경기 설정+점수+서브+타이브레이크+코트스왑+히스토리/undo 포함)
+  const snapFn = window.__TS_SNAPSHOT;
+  if (typeof snapFn !== 'function') throw new Error('__TS_SNAPSHOT이 없습니다');
+  
+  const snap = snapFn();   // ✅ 이게 "const snap = snapFn();" 의 정체
+  
+  // ✅ 2) 현재 경기 상태를 data에 통째로 저장
   const record = {
     schema_version: "match_v1",
     saved_at: now,
@@ -2366,10 +2370,7 @@ async function saveTestRecord() {
 
   const { error } = await supabase
     .from("match_records")
-    .insert({
-      app_version: snap.app_version || "v-unknown",
-      data: record
-    });
+    .insert({ app_version: "v-current", data: record });
 
   if (error) throw error;
   console.log("✅ insert ok (current state saved)");
