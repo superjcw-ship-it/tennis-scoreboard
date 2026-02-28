@@ -2342,34 +2342,33 @@ async function initSupabase() {
 
   console.log("✅ Supabase ready");
 }
-// ===========================================
-
-async function saveTestRecord() {
-  if (!supabase) await initSupabase();
-
-  const now = new Date().toISOString();
-
-  const snapFn = window.__TS_SNAPSHOT;
-  if (typeof snapFn !== 'function') throw new Error('__TS_SNAPSHOT이 없습니다');
+  // ===========================================
   
-  const snap = snapFn();   // ✅ 이게 "const snap = snapFn();" 의 정체
+  async function saveTestRecord() {
+    if (!supabase) await initSupabase();
   
-  // ✅ 2) 현재 경기 상태를 data에 통째로 저장
-  const record = {
-    schema_version: "match_v1",
-    saved_at: now,
-    app_version: snap.app_version,
-    state: snap.state,
-    undoHistory: snap.undoHistory
-  };
-
-  const { error } = await supabase
-    .from("match_records")
-    .insert({ app_version: "v-current", data: record });
-
-  if (error) throw error;
-  console.log("✅ insert ok (current state saved)");
-}
+    const now = new Date().toISOString();
+  
+    // ✅ 현재 경기 상태 스냅샷 가져오기
+    const snap = window.__TS_SNAPSHOT?.();
+    if (!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
+  
+    // ✅ 템플릿(match/teams/result/log) 저장 금지
+    // ✅ 실제 "현재 상태 전체"를 data.state로 저장
+    const record = {
+      schema_version: "match_v1",
+      saved_at: now,
+      state: snap.state,
+      undoHistory: snap.undoHistory
+    };
+  
+    const { error } = await supabase
+      .from("match_records")
+      .insert({ app_version: "v-current", data: record });
+  
+    if (error) throw error;
+    console.log("✅ insert ok (current state saved)");
+  }
 
 async function loadRecentRecords(limit = 10) {
   if (!supabase) await initSupabase();
