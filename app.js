@@ -2054,6 +2054,131 @@ function checkWinTiebreak(){
       console.error(err);
       alert('불러오기 실패 (콘솔 확인)');
     }
+    function openMatchSummary(row){
+    const d = row?.data || {};
+    const s = d.state || {};
+    const created = row?.created_at ? new Date(row.created_at).toLocaleString() : '-';
+    const savedAt = d.saved_at ? new Date(d.saved_at).toLocaleString() : created;
+  
+    const mode = s.mode || d.match?.mode || 'unknown';
+    const names = s.names || {};
+  
+    const leftName  = (mode === 'doubles')
+      ? `${names.A1 || 'A1'}&${names.A2 || 'A2'}`
+      : (names.A || 'A');
+  
+    const rightName = (mode === 'doubles')
+      ? `${names.B1 || 'B1'}&${names.B2 || 'B2'}`
+      : (names.B || 'B');
+  
+    const setScore = `${s.sets?.A ?? '-'}-${s.sets?.B ?? '-'}`;
+    const gameScore = `${s.games?.A ?? '-'}-${s.games?.B ?? '-'}`;
+  
+    const setLines = Array.isArray(s.completedSets)
+      ? s.completedSets.map((x, i)=>`세트${i+1}: ${x?.A ?? '-'}-${x?.B ?? '-'}`).join(' · ')
+      : '세트 상세 없음';
+  
+    const winner = s.winner || '(미기록)';
+    const noAd = (typeof s.noAd === 'boolean') ? (s.noAd ? 'ON' : 'OFF') : '-';
+    const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
+    const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
+  
+    // 기존 요약 모달 닫고 새로 생성
+    const old = document.getElementById('cloudSummaryBackdrop');
+    if(old) old.remove();
+  
+    const backdrop = document.createElement('div');
+    backdrop.id = 'cloudSummaryBackdrop';
+    backdrop.style.cssText = `
+      position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,.55);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+    `;
+  
+    const card = document.createElement('div');
+    card.style.cssText = `
+      width: min(720px, 96vw);
+      max-height: 80vh;
+      overflow: hidden;
+      border-radius: 14px;
+      background: rgba(20,20,24,.96);
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
+      color:#fff;
+    `;
+  
+    const head = document.createElement('div');
+    head.style.cssText = `
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+      font-weight:700;
+    `;
+    head.innerHTML = `
+      <div>경기 요약</div>
+      <button id="cloudSummaryCloseBtn" style="
+        border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;
+      ">✕</button>
+    `;
+  
+    const body = document.createElement('div');
+    body.style.cssText = `padding: 12px 14px; overflow:auto; max-height: calc(80vh - 48px);`;
+  
+    body.innerHTML = `
+      <div style="font-size:16px; font-weight:800; margin-bottom:8px;">
+        ${leftName}  vs  ${rightName}
+      </div>
+  
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px;">완료</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">NO-AD ${noAd}</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">TB ${tbOn}</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
+      </div>
+  
+      <div style="line-height:1.6; color: rgba(255,255,255,.88);">
+        <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
+        <div style="margin-top:4px;"><b>세트 상세</b>: ${setLines}</div>
+        <div style="margin-top:6px;"><b>승자</b>: ${winner}</div>
+        <div style="margin-top:6px; font-size:13px; color: rgba(255,255,255,.70);">
+          저장시간: ${savedAt}<br/>
+          row 생성시간: ${created}
+        </div>
+      </div>
+  
+      <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+        <button id="cloudSummaryCopyBtn" style="
+          border-radius:10px; border:1px solid rgba(255,255,255,.12);
+          background: rgba(59,130,246,.22);
+          color:#eaf3ff; padding:8px 10px; cursor:pointer;
+        ">요약 복사</button>
+      </div>
+    `;
+  
+    card.appendChild(head);
+    card.appendChild(body);
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+  
+    document.getElementById('cloudSummaryCloseBtn')?.addEventListener('click', ()=>backdrop.remove());
+    backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) backdrop.remove(); });
+  
+    document.getElementById('cloudSummaryCopyBtn')?.addEventListener('click', async ()=>{
+      const text =
+  `[경기 요약]
+  ${leftName} vs ${rightName}
+  세트: ${setScore} / 게임: ${gameScore}
+  세트 상세: ${setLines}
+  승자: ${winner}
+  저장시간: ${savedAt}`;
+      try{
+        await navigator.clipboard.writeText(text);
+        alert('복사 완료');
+      }catch{
+        alert('복사 실패(브라우저 권한 확인)');
+      }
+    });
+  }
   }
   // ===================================    
     
