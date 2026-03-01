@@ -1888,6 +1888,175 @@ function checkWinTiebreak(){
     syncWakeLock();
   }
 
+   // ===== Cloud Load UI (불러오기) =====
+  function _isInProgressState(s){
+    if(!s) return false;
+    // winner가 있으면 완료로 간주
+    if(s.winner) return false;
+    // started가 false면 복원대상 아님(설정 화면 상태)
+    if(s.started === false) return false;
+    return true;
+  }
+  
+  function _applyCloudState(cloudState, cloudUndo){
+    state = cloudState;
+    state.started = true;            // 로드하면 보드 화면으로
+    saveState(state);
+  
+    undoHistory = Array.isArray(cloudUndo) ? cloudUndo : [];
+    saveUndoHistory(undoHistory);
+  
+    render(true);
+  
+    try{ document.querySelector(".wrap")?.scrollTo({top:0, left:0, behavior:"auto"}); }catch(_e){}
+    try{ updateViewportUnits(); }catch(_e){}
+    setTimeout(()=>{ try{ updateViewportUnits(); }catch(_e){} }, 60);
+    setTimeout(()=>{ try{ updateViewportUnits(); }catch(_e){} }, 220);
+    scheduleResponsiveScale();
+    syncWakeLock();
+  }
+  
+  function _closeCloudLoad(){
+    const el = document.getElementById('cloudLoadBackdrop');
+    if(el) el.remove();
+  }
+  
+  async function openCloudLoad(){
+    try{
+      // supabase 준비
+      if(!supabase) await initSupabase();
+  
+      // 최근 기록 조회
+      const rows = await loadRecentRecords(20); // 이미 만들어둔 함수 사용
+  
+      // 모달 생성
+      _closeCloudLoad();
+      const backdrop = document.createElement('div');
+      backdrop.id = 'cloudLoadBackdrop';
+      backdrop.style.cssText = `
+        position: fixed; inset: 0; z-index: 9999;
+        background: rgba(0,0,0,.55);
+        display: flex; align-items: center; justify-content: center;
+        padding: 16px;
+      `;
+  
+      const card = document.createElement('div');
+      card.style.cssText = `
+        width: min(720px, 96vw);
+        max-height: 80vh;
+        overflow: hidden;
+        border-radius: 14px;
+        background: rgba(20,20,24,.96);
+        border: 1px solid rgba(255,255,255,.10);
+        box-shadow: 0 10px 30px rgba(0,0,0,.45);
+      `;
+  
+      const head = document.createElement('div');
+      head.style.cssText = `
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+        color: #fff; font-weight: 700;
+      `;
+      head.innerHTML = `
+        <div>불러오기 (클라우드)</div>
+        <button id="cloudLoadCloseBtn" style="
+          border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;
+        ">✕</button>
+      `;
+  
+      const body = document.createElement('div');
+      body.style.cssText = `padding: 10px 10px 12px 10px; overflow:auto; max-height: calc(80vh - 48px);`;
+  
+      if(!rows || rows.length === 0){
+        body.innerHTML = `<div style="color:rgba(255,255,255,.75); padding:10px;">저장된 기록이 없습니다.</div>`;
+      } else {
+        const list = document.createElement('div');
+        list.style.cssText = `display:flex; flex-direction:column; gap:8px;`;
+  
+        rows.forEach((r)=>{
+          const d = r?.data || {};
+          const s = d.state; // 우리가 저장한 실제 상태
+          const inProg = _isInProgressState(s);
+  
+          const created = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+          const mode = s?.mode || d.match?.mode || 'unknown';
+  
+          // 점수 요약(있으면 표시)
+          const setsA = s?.sets?.A ?? '-';
+          const setsB = s?.sets?.B ?? '-';
+          const gamesA = s?.games?.A ?? '-';
+          const gamesB = s?.games?.B ?? '-';
+  
+          // 이름 요약(있으면 표시)
+          const names = s?.names || {};
+          const leftName  = (mode === 'doubles') ? `${names.A1||'A1'}&${names.A2||'A2'}` : (names.A||'A');
+          const rightName = (mode === 'doubles') ? `${names.B1||'B1'}&${names.B2||'B2'}` : (names.B||'B');
+  
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.style.cssText = `
+            text-align:left; width:100%;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,.10);
+            background: rgba(255,255,255,.06);
+            color:#fff;
+            padding: 10px 12px;
+            cursor: pointer;
+          `;
+  
+          const tag = inProg
+            ? `<span style="padding:2px 8px; border-radius:999px; background: rgba(59,130,246,.25); border:1px solid rgba(59,130,246,.5); color:#eaf3ff; font-size:12px;">진행중 · 복원가능</span>`
+            : `<span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); color:#eafff6; font-size:12px;">완료</span>`;
+  
+          item.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+              <div style="font-weight:700;">${leftName}  vs  ${rightName}</div>
+              ${tag}
+            </div>
+            <div style="margin-top:6px; color: rgba(255,255,255,.80); font-size:13px;">
+              세트 ${setsA}-${setsB} · 게임 ${gamesA}-${gamesB} · ${created}
+            </div>
+          `;
+  
+          item.addEventListener('click', async ()=>{
+            // 진행중만 복원
+            if(inProg){
+              const ok = confirm('이 경기는 진행중 기록입니다. 복원할까요?');
+              if(ok){
+                try{
+                  _applyCloudState(d.state, d.undoHistory);
+                  _closeCloudLoad();
+                }catch(e){
+                  console.error(e);
+                  alert('복원 실패 (콘솔 확인)');
+                }
+              }
+            } else {
+              alert('완료된 경기입니다. (복원은 진행중 기록만 가능)');
+            }
+          });
+  
+          list.appendChild(item);
+        });
+  
+        body.appendChild(list);
+      }
+  
+      card.appendChild(head);
+      card.appendChild(body);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+  
+      document.getElementById('cloudLoadCloseBtn')?.addEventListener('click', _closeCloudLoad);
+      backdrop.addEventListener('click', (e)=>{ if(e.target === backdrop) _closeCloudLoad(); });
+  
+    }catch(err){
+      console.error(err);
+      alert('불러오기 실패 (콘솔 확인)');
+    }
+  }
+  // ===================================    
+    
   // ---------- Event binding ----------
   function bindEvents(){
     // setup mode toggle
@@ -1967,14 +2136,12 @@ function checkWinTiebreak(){
         showErr("START 처리 중 오류:", err);
       }
     });
-    bindTap(loadBtn, (e)=>{
+    
+    bindTap(loadBtn, async (e)=>{
       e.preventDefault();
-      try{
-        loadMatch();
-      }catch(err){
-        showErr("LOAD 처리 중 오류:", err);
-      }
+      await openCloudLoad();
     });
+    
     // Use bindTap for match controls too (prevents mobile double-tap zoom on rapid scoring taps)
     bindTap(btnPointA, ()=> pointWon(teamForSide("L")));
     bindTap(btnPointB, ()=> pointWon(teamForSide("R")));
