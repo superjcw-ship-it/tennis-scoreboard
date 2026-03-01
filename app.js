@@ -2082,7 +2082,8 @@ function checkWinTiebreak(){
     const noAd = (typeof s.noAd === 'boolean') ? (s.noAd ? 'ON' : 'OFF') : '-';
     const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
-  
+    const gameHistoryHtml = buildGameHistoryHtml(s);
+      
     // 기존 요약 모달 닫고 새로 생성
     const old = document.getElementById('cloudSummaryBackdrop');
     if(old) old.remove();
@@ -2140,6 +2141,7 @@ function checkWinTiebreak(){
         <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
         <div style="margin-top:4px;"><b>세트 상세</b>: ${setLines}</div>
         <div style="margin-top:6px;"><b>승자</b>: ${winner}</div>
+        ${gameHistoryHtml}
         <div style="margin-top:6px; font-size:13px; color: rgba(255,255,255,.70);">
           저장시간: ${savedAt}<br/>
           row 생성시간: ${created}
@@ -2178,6 +2180,71 @@ function checkWinTiebreak(){
         alert('복사 실패(브라우저 권한 확인)');
       }
     });
+  }
+  function buildGameHistoryHtml(s){
+  const gh = Array.isArray(s?.gameHistory) ? s.gameHistory : [];
+  if (gh.length === 0) {
+    return `<div style="margin-top:10px; color:rgba(255,255,255,.7); font-size:13px;">게임 기록이 없습니다.</div>`;
+  }
+
+  // 세트별로 gameHistory를 나눌 기준(완료된 세트 게임 수)
+  const setCounts = Array.isArray(s?.completedSets)
+    ? s.completedSets.map(x => (x?.A || 0) + (x?.B || 0)).filter(n => n > 0)
+    : [];
+
+  const rows = [];
+  let idx = 0;
+  let setNo = 1;
+
+  // 완료 세트들 먼저
+  for (const cnt of setCounts) {
+    const slice = gh.slice(idx, idx + cnt);
+    slice.forEach((g, i) => rows.push({ set: setNo, game: i + 1, g }));
+    idx += cnt;
+    setNo += 1;
+  }
+  // 남은 게임(진행중 세트)도 표시
+  const remain = gh.slice(idx);
+  remain.forEach((g, i) => rows.push({ set: setNo, game: i + 1, g }));
+
+  const tr = rows.map(r => {
+    const A = r.g?.A ?? '-';
+    const B = r.g?.B ?? '-';
+    const note =
+      (r.g?.noAdDeuceWinner ? `NO-AD 듀스승: ${r.g.noAdDeuceWinner}` :
+       r.g?.adDeuceWinner   ? `AD 듀스승: ${r.g.adDeuceWinner}` : '');
+
+    return `
+      <tr>
+        <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.set}</td>
+        <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.game}</td>
+        <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); font-weight:700;">${A} : ${B}</td>
+        <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:12px;">${note}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // details/summary는 “접었다 펼치기”가 기본 지원이라 구현이 간단함
+  return `
+    <details style="margin-top:12px;">
+      <summary style="cursor:pointer; user-select:none; color:#eaf3ff;">
+        게임 기록 보기 (40:30 포함)
+      </summary>
+      <div style="margin-top:10px; overflow:auto; max-height: 260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <thead>
+            <tr style="background:rgba(255,255,255,.06);">
+              <th style="text-align:left; padding:8px;">세트</th>
+              <th style="text-align:left; padding:8px;">게임</th>
+              <th style="text-align:left; padding:8px;">마지막 점수</th>
+              <th style="text-align:left; padding:8px;">비고</th>
+            </tr>
+          </thead>
+          <tbody>${tr}</tbody>
+        </table>
+      </div>
+    </details>
+  `;
   }
   }
   // ===================================    
