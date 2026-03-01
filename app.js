@@ -2032,7 +2032,7 @@ function checkWinTiebreak(){
                 }
               }
             } else {
-              alert('완료된 경기입니다. (복원은 진행중 기록만 가능)');
+              openMatchSummary(r);
             }
           });
   
