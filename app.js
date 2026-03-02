@@ -278,10 +278,15 @@ function updateViewportUnits(){
       run(e);
     }, {passive:false});
     el.addEventListener("touchend",(e)=>{
-      __lastPointerUp = Date.now();
+    // ✅ pointerup이 이미 처리했으면 touchend는 무시 (모바일 2번 실행 방지)
+    if(Date.now() - __lastPointerUp < 600){
       e.preventDefault();
-      run(e);
-    }, {passive:false});
+      return;
+    }
+    __lastPointerUp = Date.now();
+    e.preventDefault();
+    run(e);
+    }, {passive:false});  
     el.addEventListener("click",(e)=>{
       if(Date.now()-__lastPointerUp < 600){ e.preventDefault(); return; }
       run(e);
