@@ -588,6 +588,7 @@ function debounce(fn, ms=120){
       resetTiebreak();
       state.completedSets = [];
       state.gameHistory = [];
+      state.setGameHistories = [];
       state.winner = null;
       undoHistory = [];
       saveUndoHistory(undoHistory);
@@ -656,7 +657,8 @@ function wireResetChoiceModal(){
 
       completedSets: [],         // [{A:6,B:4,tbA:undefined,tbB:undefined}, ...]
       gameHistory: [],           // length <=13, elements: {A:"40",B:"30", noAdDeuceWinner:"A"|"B"|null}
-
+      setGameHistories: [],   // ✅ 추가
+      
       keepAwakeMins:0,
       soundOn:false,
       winner:null,
@@ -708,6 +710,7 @@ function wireResetChoiceModal(){
     if(s.bestOf !== 5) s.bestOf = 3;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
+    if(Array.isArray(pick("setGameHistories"))) s.setGameHistories = pick("setGameHistories").slice(0,5);
 
     return s;
   }
@@ -1081,6 +1084,15 @@ function checkWinTiebreak(){
     if(state.completedSets.length>5) state.completedSets = state.completedSets.slice(0,5);
   }
 
+  function upsertSetGameHistory(setNo){
+    state.setGameHistories = Array.isArray(state.setGameHistories) ? state.setGameHistories : [];
+    const gh = JSON.parse(JSON.stringify(state.gameHistory || []));
+    const idx = state.setGameHistories.findIndex(x => x && x.set === setNo);
+    const obj = { set: setNo, gameHistory: gh };
+    if(idx >= 0) state.setGameHistories[idx] = obj;
+    else state.setGameHistories.push(obj);
+  } 
+    
   function startNewSet(){
     state.games.A = 0; state.games.B = 0;
     resetPoints();
@@ -1340,7 +1352,8 @@ function checkWinTiebreak(){
         const finalB = (tbW==="B") ? 7 : 6;
 
         pushCompletedSet(finalA, finalB, state.tbPoints.A, state.tbPoints.B);
-
+        upsertSetGameHistory(state.completedSets.length);
+        
         state.sets[tbW] += 1;
 
         // next set: server should be the next in rotation after the first TB server
@@ -1390,6 +1403,7 @@ function checkWinTiebreak(){
       if(sW){
         // completed set (non-tb: just games)
         pushCompletedSet(state.games.A, state.games.B);
+        upsertSetGameHistory(state.completedSets.length); // ✅ 추가 (세트 마지막 게임 포함 저장)
         state.sets[sW] += 1;
 
         const mW = checkWinMatch();
@@ -2183,7 +2197,19 @@ function checkWinTiebreak(){
   }
   function buildGameHistoryHtml(s, undoHistory){
     const rows = [];
-  
+
+    // ✅ 세트별 기록이 있으면 이걸로 표 구성 (마지막 게임 누락 방지)
+    if (Array.isArray(s?.setGameHistories) && s.setGameHistories.length > 0) {
+      const rows = [];
+      s.setGameHistories.forEach(sh => {
+        const gh = Array.isArray(sh?.gameHistory) ? sh.gameHistory : [];
+        gh.forEach((g, i) => rows.push({ set: sh.set, game: i + 1, g }));
+      });
+    
+      // 여기서 rows로 기존 표(tr) 만드는 코드로 이어가면 됨
+      // (너가 이미 만든 tr 생성 코드 재사용)
+    }
+    
     // 1) undoHistory로 "게임 종료 순간"만 뽑아 전체 게임 기록 재구성
     if (Array.isArray(undoHistory) && undoHistory.length > 0) {
       let prevLen = 0;
