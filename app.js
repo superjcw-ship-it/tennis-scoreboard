@@ -2214,70 +2214,70 @@ function checkWinTiebreak(){
     });
   }
   function buildGameHistoryHtml(s, undoHistory){
+  try{
     const rows = [];
 
+    // 1) setGameHistories가 있으면 최우선 (구조 2종 모두 지원)
     const sgh = s?.setGameHistories;
     if (Array.isArray(sgh) && sgh.length > 0) {
-      // sgh는 [[게임1..], [게임1..], ...] 형태
-      const rows = [];
-      sgh.forEach((arr, i) => {
-        (arr || []).forEach((g, gi) => rows.push({ set: i+1, game: gi+1, g }));
-      });
-      // 아래는 네가 이미 만든 rows→tr 만드는 코드 그대로 재사용하면 됨
+      // (A) 배열의 배열 형태: [ [game1..], [game1..], ...]
+      if (Array.isArray(sgh[0])) {
+        sgh.forEach((arr, si) => {
+          (arr || []).forEach((g, gi) => rows.push({ set: si + 1, game: gi + 1, g }));
+        });
+      }
+      // (B) 객체 배열 형태: [ {set:1, gameHistory:[...]}, ...]
+      else if (typeof sgh[0] === 'object' && sgh[0] && 'set' in sgh[0]) {
+        sgh.forEach(sh => {
+          const gh = Array.isArray(sh?.gameHistory) ? sh.gameHistory : [];
+          gh.forEach((g, gi) => rows.push({ set: sh.set, game: gi + 1, g }));
+        });
+      }
     }
-    
-    // 1) undoHistory로 "게임 종료 순간"만 뽑아 전체 게임 기록 재구성
-    if (Array.isArray(undoHistory) && undoHistory.length > 0) {
+
+    // 2) setGameHistories가 없으면 undoHistory로 재구성(기존 방식)
+    if (rows.length === 0 && Array.isArray(undoHistory) && undoHistory.length > 0) {
       let prevLen = 0;
-  
       for (let i = 0; i < undoHistory.length; i++) {
         const st = undoHistory[i] || {};
         const gh = Array.isArray(st.gameHistory) ? st.gameHistory : [];
-        const csLen = Array.isArray(st.completedSets) ? st.completedSets.length : 0;
-        const setNo = csLen + 1;
-  
-        // 게임이 추가된 순간(= gameHistory 길이 증가)만 기록
+        const setNo = (Array.isArray(st.completedSets) ? st.completedSets.length : 0) + 1;
+
         if (i === 0) {
-          // 첫 스냅샷에 이미 게임이 있으면 전부 기록
-          for (let k = 0; k < gh.length; k++) {
-            rows.push({ set: setNo, game: k + 1, g: gh[k] });
-          }
+          gh.forEach((g, k) => rows.push({ set: setNo, game: k + 1, g }));
           prevLen = gh.length;
           continue;
         }
-  
+
         if (gh.length > prevLen) {
           for (let k = prevLen; k < gh.length; k++) {
             rows.push({ set: setNo, game: k + 1, g: gh[k] });
           }
           prevLen = gh.length;
         } else if (gh.length < prevLen) {
-          // 세트가 넘어가며 gameHistory가 리셋된 경우
-          prevLen = gh.length;
+          prevLen = gh.length; // 세트 넘어가며 리셋된 케이스
         }
       }
     }
-  
-    // 2) undoHistory가 없거나 rows가 비면, 현재 state.gameHistory는 "마지막 세트"로 표기
+
+    // 3) 그래도 없으면 현재 state.gameHistory를 “마지막 세트”로 표시
     if (rows.length === 0) {
       const gh = Array.isArray(s?.gameHistory) ? s.gameHistory : [];
       const lastSetNo = (Array.isArray(s?.completedSets) ? s.completedSets.length : 0) + 1;
-      for (let i = 0; i < gh.length; i++) {
-        rows.push({ set: lastSetNo, game: i + 1, g: gh[i] });
-      }
+      gh.forEach((g, i) => rows.push({ set: lastSetNo, game: i + 1, g }));
     }
-  
+
     if (rows.length === 0) {
       return `<div style="margin-top:10px; color:rgba(255,255,255,.7); font-size:13px;">게임 기록이 없습니다.</div>`;
     }
-  
+
     const tr = rows.map(r => {
       const A = r.g?.A ?? '-';
       const B = r.g?.B ?? '-';
       const note =
         (r.g?.noAdDeuceWinner ? `NO-AD 듀스승: ${r.g.noAdDeuceWinner}` :
          r.g?.adDeuceWinner   ? `AD 듀스승: ${r.g.adDeuceWinner}` : '');
-  
+
       return `
         <tr>
           <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.set}</td>
@@ -2287,7 +2287,7 @@ function checkWinTiebreak(){
         </tr>
       `;
     }).join('');
-  
+
     return `
       <details style="margin-top:12px;">
         <summary style="cursor:pointer; user-select:none; color:#eaf3ff;">
@@ -2308,7 +2308,11 @@ function checkWinTiebreak(){
         </div>
       </details>
     `;
+  } catch (e) {
+    console.error(e);
+    return `<div style="margin-top:10px; color:rgba(255,180,180,.9); font-size:13px;">게임 기록 표시 중 오류가 발생했습니다. (콘솔 확인)</div>`;
   }
+  }  
   }
   // ===================================    
     
