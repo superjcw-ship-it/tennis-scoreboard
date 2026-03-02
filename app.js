@@ -2217,25 +2217,26 @@ function checkWinTiebreak(){
   try{
     const rows = [];
 
-    // 1) setGameHistories가 있으면 최우선 (구조 2종 모두 지원)
+    // 1) setGameHistories (구조가 섞여 있어도 안전하게 처리)
     const sgh = s?.setGameHistories;
     if (Array.isArray(sgh) && sgh.length > 0) {
-      // (A) 배열의 배열 형태: [ [game1..], [game1..], ...]
-      if (Array.isArray(sgh[0])) {
-        sgh.forEach((arr, si) => {
-          (arr || []).forEach((g, gi) => rows.push({ set: si + 1, game: gi + 1, g }));
-        });
-      }
-      // (B) 객체 배열 형태: [ {set:1, gameHistory:[...]}, ...]
-      else if (typeof sgh[0] === 'object' && sgh[0] && 'set' in sgh[0]) {
-        sgh.forEach(sh => {
-          const gh = Array.isArray(sh?.gameHistory) ? sh.gameHistory : [];
-          gh.forEach((g, gi) => rows.push({ set: sh.set, game: gi + 1, g }));
-        });
-      }
+      sgh.forEach((item, idx) => {
+        // (A) 배열 형태: [ [g,g..], [g,g..] ]  -> idx+1이 세트 번호
+        if (Array.isArray(item)) {
+          item.forEach((g, gi) => rows.push({ set: idx + 1, game: gi + 1, g }));
+          return;
+        }
+        // (B) 객체 형태: [ {set:1, gameHistory:[...]}, ... ]
+        if (item && typeof item === 'object') {
+          const setNo = Number(item.set) || (idx + 1);
+          const gh = Array.isArray(item.gameHistory) ? item.gameHistory : [];
+          gh.forEach((g, gi) => rows.push({ set: setNo, game: gi + 1, g }));
+          return;
+        }
+      });
     }
 
-    // 2) setGameHistories가 없으면 undoHistory로 재구성(기존 방식)
+    // 2) setGameHistories가 없으면 undoHistory로 재구성(기존 방식, 안전 처리)
     if (rows.length === 0 && Array.isArray(undoHistory) && undoHistory.length > 0) {
       let prevLen = 0;
       for (let i = 0; i < undoHistory.length; i++) {
@@ -2271,18 +2272,28 @@ function checkWinTiebreak(){
       return `<div style="margin-top:10px; color:rgba(255,255,255,.7); font-size:13px;">게임 기록이 없습니다.</div>`;
     }
 
+    // row별 표시 안전 처리 (g가 문자열/객체여도 OK)
     const tr = rows.map(r => {
-      const A = r.g?.A ?? '-';
-      const B = r.g?.B ?? '-';
+      const g = r.g;
+
+      let scoreText = '-';
+      if (g && typeof g === 'object') {
+        const A = g.A ?? '-';
+        const B = g.B ?? '-';
+        scoreText = `${A} : ${B}`;
+      } else if (typeof g === 'string' || typeof g === 'number') {
+        scoreText = String(g);
+      }
+
       const note =
-        (r.g?.noAdDeuceWinner ? `NO-AD 듀스승: ${r.g.noAdDeuceWinner}` :
-         r.g?.adDeuceWinner   ? `AD 듀스승: ${r.g.adDeuceWinner}` : '');
+        (g && typeof g === 'object' && g.noAdDeuceWinner) ? `NO-AD 듀스승: ${g.noAdDeuceWinner}` :
+        (g && typeof g === 'object' && g.adDeuceWinner)   ? `AD 듀스승: ${g.adDeuceWinner}` : '';
 
       return `
         <tr>
           <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.set}</td>
           <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.game}</td>
-          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); font-weight:700;">${A} : ${B}</td>
+          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); font-weight:700;">${scoreText}</td>
           <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:12px;">${note}</td>
         </tr>
       `;
@@ -2312,7 +2323,7 @@ function checkWinTiebreak(){
     console.error(e);
     return `<div style="margin-top:10px; color:rgba(255,180,180,.9); font-size:13px;">게임 기록 표시 중 오류가 발생했습니다. (콘솔 확인)</div>`;
   }
-  }  
+}
   }
   // ===================================    
     
