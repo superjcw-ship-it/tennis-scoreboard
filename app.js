@@ -657,7 +657,7 @@ function wireResetChoiceModal(){
 
       completedSets: [],         // [{A:6,B:4,tbA:undefined,tbB:undefined}, ...]
       gameHistory: [],           // length <=13, elements: {A:"40",B:"30", noAdDeuceWinner:"A"|"B"|null}
-      setGameHistories: [],   // ✅ 추가
+      setGameHistories: [],     // ✅ 세트별 게임기록 누적(마지막 게임 누락 방지)
       
       keepAwakeMins:0,
       soundOn:false,
@@ -710,7 +710,11 @@ function wireResetChoiceModal(){
     if(s.bestOf !== 5) s.bestOf = 3;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
-    if(Array.isArray(pick("setGameHistories"))) s.setGameHistories = pick("setGameHistories").slice(0,5);
+    if(Array.isArray(pick("setGameHistories"))) {
+      s.setGameHistories = pick("setGameHistories")
+        .slice(0,5)
+        .map(arr => Array.isArray(arr) ? arr.slice(0,13) : []);
+    }
 
     return s;
   }
@@ -1063,6 +1067,13 @@ function checkWinTiebreak(){
     };
 
     state.gameHistory[idx] = rec;
+    
+    // ✅ 세트별 누적 기록 (세트 마지막 게임 누락 방지)
+    const setNo = (Array.isArray(state.completedSets) ? state.completedSets.length : 0) + 1;
+    state.setGameHistories = Array.isArray(state.setGameHistories) ? state.setGameHistories : [];
+    if (!Array.isArray(state.setGameHistories[setNo-1])) state.setGameHistories[setNo-1] = [];
+    state.setGameHistories[setNo-1].push(rec);
+    if (state.setGameHistories[setNo-1].length > 13) state.setGameHistories[setNo-1] = state.setGameHistories[setNo-1].slice(0,13);
   }
 
   function recordTiebreakSnapshot(){
@@ -1072,6 +1083,13 @@ function checkWinTiebreak(){
       B: String(state.tbPoints.B),
       noAdDeuceWinner: null
     };
+    const tbRec = state.gameHistory[idx];
+
+    // ✅ TB도 세트별 누적
+    const setNo = (Array.isArray(state.completedSets) ? state.completedSets.length : 0) + 1;
+    state.setGameHistories = Array.isArray(state.setGameHistories) ? state.setGameHistories : [];
+    if (!Array.isArray(state.setGameHistories[setNo-1])) state.setGameHistories[setNo-1] = [];
+    state.setGameHistories[setNo-1].push(tbRec);
   }
 
   function pushCompletedSet(a,b,tbA,tbB){
@@ -2198,16 +2216,14 @@ function checkWinTiebreak(){
   function buildGameHistoryHtml(s, undoHistory){
     const rows = [];
 
-    // ✅ 세트별 기록이 있으면 이걸로 표 구성 (마지막 게임 누락 방지)
-    if (Array.isArray(s?.setGameHistories) && s.setGameHistories.length > 0) {
+    const sgh = s?.setGameHistories;
+    if (Array.isArray(sgh) && sgh.length > 0) {
+      // sgh는 [[게임1..], [게임1..], ...] 형태
       const rows = [];
-      s.setGameHistories.forEach(sh => {
-        const gh = Array.isArray(sh?.gameHistory) ? sh.gameHistory : [];
-        gh.forEach((g, i) => rows.push({ set: sh.set, game: i + 1, g }));
+      sgh.forEach((arr, i) => {
+        (arr || []).forEach((g, gi) => rows.push({ set: i+1, game: gi+1, g }));
       });
-    
-      // 여기서 rows로 기존 표(tr) 만드는 코드로 이어가면 됨
-      // (너가 이미 만든 tr 생성 코드 재사용)
+      // 아래는 네가 이미 만든 rows→tr 만드는 코드 그대로 재사용하면 됨
     }
     
     // 1) undoHistory로 "게임 종료 순간"만 뽑아 전체 게임 기록 재구성
