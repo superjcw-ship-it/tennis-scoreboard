@@ -790,13 +790,23 @@ function wireResetChoiceModal(){
 
   function currentSetNo(){
     // 1-based
-    return Math.min(5, state.completedSets.length + 1);
+    const played = Array.isArray(state.completedSets) ? state.completedSets.length : 0;
+  
+    // ✅ 경기 종료면 "다음 세트"가 아니라 마지막 세트 번호를 유지
+    if(state.winner) return Math.max(1, Math.min(5, played));
+  
+    return Math.min(5, played + 1);
   }
 
   function currentGameNo(){
     if(state.tiebreak) return 13;
-    const g = state.games.A + state.games.B + 1;
-    return Math.min(13, Math.max(1, g));
+  
+    const total = (state.games?.A || 0) + (state.games?.B || 0);
+  
+    // ✅ 경기 종료면 "다음 게임"이 아니라 마지막 게임 번호를 유지
+    if(state.winner) return Math.min(13, Math.max(1, total));
+  
+    return Math.min(13, Math.max(1, total + 1));
   }
 
   function showErr(title, err){
@@ -1006,8 +1016,7 @@ function checkWinTiebreak(){
     }
 
     const curSet = currentSetNo();
-    if(curSet>=1 && curSet<=5){
-      // show current set games (even during TB)
+    if(!state.winner && curSet>=1 && curSet<=5){
       shA[curSet-1].textContent = String(state.games.A);
       shB[curSet-1].textContent = String(state.games.B);
       shA[curSet-1].classList.add("mutedCell");
@@ -1058,7 +1067,7 @@ function checkWinTiebreak(){
 
     // current game live point display
     const liveIdx = gNo - 1;
-    if(liveIdx>=0 && liveIdx<13){
+    if(!state.winner && liveIdx>=0 && liveIdx<13){
       if(!recs[liveIdx]){
         if(ghA[liveIdx]){ ghA[liveIdx].textContent = displayPointForTeam("A"); ghA[liveIdx].classList.add("mutedCell"); }
         if(ghB[liveIdx]){ ghB[liveIdx].textContent = displayPointForTeam("B"); ghB[liveIdx].classList.add("mutedCell"); }
