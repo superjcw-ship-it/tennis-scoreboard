@@ -588,8 +588,9 @@
     .modalSheet{
       position:absolute;
       left: 50%;
-      transform: translateX(-50%);
-      bottom: 12px;
+      top: 50%;
+      bottom: auto;
+      transform: translate(-50%, -50%);
       width: min(720px, calc(100% - 18px));
       max-height: calc(var(--appH, 100vh) - 24px);
       overflow:hidden;
@@ -598,6 +599,12 @@
       background: rgba(18,18,20,.96);
       box-shadow: 0 20px 80px rgba(0,0,0,.6);
     }
+      @media (orientation: portrait){
+        .modalSheet{
+          width: min(92vw, 520px);
+          max-height: calc(var(--appH, 100vh) - 40px);
+        }
+      }  
     .modalHeader{
       display:flex; align-items:center; justify-content:space-between;
       gap: 10px;
