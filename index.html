@@ -1020,6 +1020,19 @@
 }
     
 </style>
+  
+  .setupRow2{
+  display:flex;
+  gap:12px;
+  align-items:flex-end;
+  }
+  .setupCol{ flex:1; min-width:0; }
+  
+  /* 모바일에서 너무 좁으면 자동으로 세로로 쌓이게 */
+  @media (max-width: 560px){
+    .setupRow2{ flex-direction:column; align-items:stretch; }
+  }
+  
 </head>
 <body>
   <div class="wrap">
@@ -1039,12 +1052,25 @@
             </select>
           </div>
 
-          <div class="field">
-            <div class="fieldLabel">세트 방식</div>
-            <select id="bestOf">
-              <option value="3">3세트 2선승</option>
-              <option value="5">5세트 3선승</option>
-            </select>
+          <div class="setupRow2">
+            <!-- 좌측: 세트 방식 -->
+            <div class="setupCol">
+              <label for="bestOf">세트 방식</label>
+              <select id="bestOf">
+                <option value="1">1세트 1선승</option>
+                <option value="3">3세트 2선승</option>
+                <option value="5">5세트 3선승</option>
+              </select>
+            </div>
+          
+            <!-- 우측: 게임 수 -->
+            <div class="setupCol">
+              <label for="gamesToWin">게임 수</label>
+              <select id="gamesToWin">
+                <option value="4">4게임</option>
+                <option value="6">6게임</option>
+              </select>
+            </div>
           </div>
 
           <div class="field">
