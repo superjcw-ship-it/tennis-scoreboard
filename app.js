@@ -716,7 +716,7 @@ function wireResetChoiceModal(){
     // sanity
     if(s.mode !== "doubles") s.mode = "singles";
     // bestOf: 1/3/5만 허용
-    if(s.bestOf !== 5) s.bestOf = 3;
+    if (![1,3,5].includes(s.bestOf)) s.bestOf = 3;
     // gamesToWin: 4/6만 허용 (추가)
     if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 6;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
