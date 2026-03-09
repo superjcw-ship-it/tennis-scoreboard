@@ -896,14 +896,31 @@ function checkWinTiebreak(){
     return null;
   }
 
-  function checkEnterTiebreak(){ return !!state.tiebreakOn && state.games.A===6 && state.games.B===6; }
+  function checkEnterTiebreak(){
+  const t = getTbTrigger();
+  return !!state.tiebreakOn && state.games.A===t && state.games.B===t;
+  }
 
+  function getGamesToWin(){
+  return (state.gamesToWin === 4) ? 4 : 6;
+  }
+  function getTbTrigger(){
+    // 4게임이면 3-3에서 TB, 6게임이면 6-6에서 TB
+    return (getGamesToWin() === 4) ? 3 : 6;
+  }  
+    
   function checkWinSet(){
-    const a=state.games.A, b=state.games.B;
-    if(a===7 && b===6) return "A";
-    if(b===7 && a===6) return "B";
-    if(a>=6 && a-b>=2) return "A";
-    if(b>=6 && b-a>=2) return "B";
+    const a = state.games.A, b = state.games.B;
+    const gtw = getGamesToWin();
+    const tbBase = getTbTrigger(); // 4게임=3, 6게임=6
+  
+    // TB로 끝난 세트: 4-3 또는 7-6 (tiebreakOn일 때)
+    if (a === tbBase + 1 && b === tbBase) return "A";
+    if (b === tbBase + 1 && a === tbBase) return "B";
+  
+    // 일반 세트 승리: 4(or6) 이상 + 2게임 차
+    if (a >= gtw && a - b >= 2) return "A";
+    if (b >= gtw && b - a >= 2) return "B";
     return null;
   }
 
@@ -1249,6 +1266,7 @@ function checkWinTiebreak(){
     if(modeSel){
       modeSel.value = state.mode;
       bestOfSel.value = String(state.bestOf);
+      if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 6);
       if(noAdChk) noAdChk.checked = !!state.noAd;
 
       if(state.mode==="doubles"){
@@ -1377,8 +1395,9 @@ function checkWinTiebreak(){
         recordTiebreakSnapshot();
 
         // winner gets 7-6 set
-        const finalA = (tbW==="A") ? 7 : 6;
-        const finalB = (tbW==="B") ? 7 : 6;
+        const base = getTbTrigger();          // 4게임=3, 6게임=6
+        const finalA = (tbW==="A") ? (base + 1) : base;
+        const finalB = (tbW==="B") ? (base + 1) : base;
 
         pushCompletedSet(finalA, finalB, state.tbPoints.A, state.tbPoints.B);
         upsertSetGameHistory(state.completedSets.length);
@@ -1875,6 +1894,7 @@ function checkWinTiebreak(){
 
     next.mode = modeSel.value;
     next.bestOf = parseInt(bestOfSel.value,10) || 3;
+    next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 6;
     next.noAd = !!noAdChk?.checked;
 
     if(next.mode==="doubles"){
@@ -2370,6 +2390,12 @@ function checkWinTiebreak(){
       saveState(state);
     });
 
+    gamesToWinSel?.addEventListener("change", ()=>{
+    const v = parseInt(gamesToWinSel.value, 10) || 6;
+    state.gamesToWin = ([4,6].includes(v) ? v : 6);
+    saveState(state);
+    });
+    
     noAdChk?.addEventListener("change", ()=>{
       state.noAd = !!noAdChk.checked;
       saveState(state);
@@ -2555,7 +2581,11 @@ function checkWinTiebreak(){
     const mode=document.getElementById('modeBadge');
     if(mode) mode.textContent = (state.mode==="doubles") ? "복식" : "단식";
     const setNo=document.getElementById('setNoBadge');
-    if(setNo) setNo.textContent = (state.bestOf===5 ? "5세트 3선승" : "3세트 2선승");
+    if(setNo){
+    setNo.textContent =
+      (state.bestOf===1) ? "1세트 1선승" :
+      (state.bestOf===5) ? "5세트 3선승" : "3세트 2선승";
+    }
     const noAd=document.getElementById('noAdBadge');
     if(noAd) noAd.textContent = "NO-AD: " + (state.noAd ? "ON" : "OFF");
 
