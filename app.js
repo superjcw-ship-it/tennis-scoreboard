@@ -307,6 +307,7 @@ function debounce(fn, ms=120){
   // setup fields
   const modeSel = $("mode");
   const bestOfSel = $("bestOf");
+  const gamesToWinSel = $("gamesToWin");
   const noAdChk = $("noAd");
 
   const singlesInputs = $("singlesInputs");
@@ -641,6 +642,7 @@ function wireResetChoiceModal(){
       started:false,
       mode:"doubles",
       bestOf:3,
+      gamesToWin:6,   // ✅ 추가: 4 또는 6 (기본 6)
       noAd:true,
 
       // preference: whether to play a tiebreak game at 6:6 (default ON)
@@ -682,6 +684,7 @@ function wireResetChoiceModal(){
 
     if(typeof pick("mode")==="string") s.mode = pick("mode");
     if(typeof pick("bestOf")==="number") s.bestOf = pick("bestOf");
+    if(typeof pick("gamesToWin")==="number") s.gamesToWin = pick("gamesToWin");
     if(typeof pick("noAd")==="boolean") s.noAd = pick("noAd");
     if(typeof pick("started")==="boolean") s.started = pick("started");
 
@@ -712,7 +715,10 @@ function wireResetChoiceModal(){
 
     // sanity
     if(s.mode !== "doubles") s.mode = "singles";
+    // bestOf: 1/3/5만 허용
     if(s.bestOf !== 5) s.bestOf = 3;
+    // gamesToWin: 4/6만 허용 (추가)
+    if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 6;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
     if(Array.isArray(pick("setGameHistories"))) {
