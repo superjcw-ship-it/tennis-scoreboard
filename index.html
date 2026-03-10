@@ -599,6 +599,43 @@
       background: rgba(18,18,20,.96);
       box-shadow: 0 20px 80px rgba(0,0,0,.6);
     }
+
+    .resultWinText{
+      text-align:center;
+      font-size: 28px;
+      font-weight: 950;
+      line-height: 1.25;
+      margin: 8px 0 4px;
+    }
+    
+    .resultSubText{
+      text-align:center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    
+    .resultBtnRow{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    
+    .resultBtnRow .btn,
+    .resultBtnRow .badge{
+      width: 100%;
+      justify-content: center;
+    }
+    
+    @media (max-width: 520px){
+      .resultWinText{
+        font-size: 24px;
+      }
+      .resultBtnRow{
+        grid-template-columns: 1fr;
+      }
+    }
       @media (orientation: portrait){
         .modalSheet{
           width: min(92vw, 520px);
@@ -1269,7 +1306,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="리셋 선택">
             <div class="modalHeader">
               <div class="modalTitle">리셋
-</div>
+        </div>
               <button class="iconBtn" id="resetChoiceCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
             <div class="modalBody">
@@ -1287,6 +1324,25 @@
           </div>
         </div>
 
+        <!-- ===== Match Result Modal ===== -->
+        <div id="matchResultModal" class="modal" style="display:none;">
+          <div class="modalBackdrop" id="matchResultBackdrop"></div>
+          <div class="modalSheet" role="dialog" aria-modal="true" aria-label="경기 완료">
+            <div class="modalHeader">
+              <div class="modalTitle">게임 완료</div>
+            </div>
+            <div class="modalBody">
+              <div id="matchResultWinText" class="resultWinText">A1 &amp; A2 승리!</div>
+              <div class="resultSubText">다음 동작을 선택하세요.</div>
+        
+              <div class="resultBtnRow">
+                <button id="regameBtn" class="btn btnPrimary" type="button">REGAME</button>
+                <button id="goSetupAfterMatchBtn" class="btn" type="button">설정창</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <!-- ===== Settings Modal (v22.8) ===== -->
         <div id="settingsModal" class="modal" style="display:none;">
           <div class="modalBackdrop" id="settingsBackdrop"></div>
