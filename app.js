@@ -309,6 +309,7 @@ function debounce(fn, ms=120){
   const bestOfSel = $("bestOf");
   const gamesToWinSel = $("gamesToWin");
   const noAdChk = $("noAd");
+  const tbOnChk = $("tbOn");
 
   const singlesInputs = $("singlesInputs");
   const doublesInputs = $("doublesInputs");
@@ -694,11 +695,11 @@ function wireResetChoiceModal(){
     return {
       started:false,
       mode:"doubles",
-      bestOf:3,
-      gamesToWin:6,   // ✅ 추가: 4 또는 6 (기본 6)
-      noAd:true,
-
-      // preference: whether to play a tiebreak game at 6:6 (default ON)
+      bestOf:1,
+      gamesToWin:4,
+      noAd:false,
+  
+      // preference: whether to play a tiebreak game at 3:3 or 6:6
       tiebreakOn:true,
 
       names:{ A:"Player A", B:"Player B", A1:"A1", A2:"A2", B1:"B1", B2:"B2" },
@@ -769,9 +770,9 @@ function wireResetChoiceModal(){
     // sanity
     if(s.mode !== "doubles") s.mode = "singles";
     // bestOf: 1/3/5만 허용
-    if (![1,3,5].includes(s.bestOf)) s.bestOf = 3;
+    if (![1,3,5].includes(s.bestOf)) s.bestOf = 1;
     // gamesToWin: 4/6만 허용 (추가)
-    if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 6;
+    if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
     if(Array.isArray(pick("setGameHistories"))) {
@@ -1327,9 +1328,10 @@ function checkWinTiebreak(){
     // setup UI sync
     if(modeSel){
       modeSel.value = state.mode;
-      bestOfSel.value = String(state.bestOf);
-      if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 6);
+      bestOfSel.value = String(state.bestOf || 1);
+      if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 4);
       if(noAdChk) noAdChk.checked = !!state.noAd;
+      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
 
       if(state.mode==="doubles"){
         singlesInputs.style.display = "none";
@@ -1962,9 +1964,10 @@ function checkWinTiebreak(){
     next.started = true;
 
     next.mode = modeSel.value;
-    next.bestOf = parseInt(bestOfSel.value,10) || 3;
-    next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 6;
+    next.bestOf = parseInt(bestOfSel.value,10) || 1;
+    next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 4;
     next.noAd = !!noAdChk?.checked;
+    next.tiebreakOn = !!tbOnChk?.checked;
 
     if(next.mode==="doubles"){
       next.names.A1=(pA1.value||"").trim()||"A1";
@@ -2454,21 +2457,56 @@ function checkWinTiebreak(){
     });
 
     bestOfSel?.addEventListener("change", ()=>{
-      const v = parseInt(bestOfSel.value,10) || 3;
-      state.bestOf = v;
+      const v = parseInt(bestOfSel.value,10) || 1;
+      state.bestOf = ([1,3,5].includes(v) ? v : 1);
       saveState(state);
     });
-
+    
     gamesToWinSel?.addEventListener("change", ()=>{
-    const v = parseInt(gamesToWinSel.value, 10) || 6;
-    state.gamesToWin = ([4,6].includes(v) ? v : 6);
-    saveState(state);
+      const v = parseInt(gamesToWinSel.value, 10) || 4;
+      state.gamesToWin = ([4,6].includes(v) ? v : 4);
+    
+      // 현재 점수가 TB 진입 조건인데 TB OFF면 일반 게임 유지
+      if(!state.tiebreakOn && state.tiebreak){
+        state.tiebreak = false;
+        state.tbPoints = {A:0, B:0};
+        resetPoints();
+      }
+    
+      saveState(state);
+      render(true);
     });
     
     noAdChk?.addEventListener("change", ()=>{
       state.noAd = !!noAdChk.checked;
       saveState(state);
-      // if NO-AD changed mid game, keep it applied immediately
+      render(true);
+    });
+    
+    tbOnChk?.addEventListener("change", ()=>{
+      state.tiebreakOn = !!tbOnChk.checked;
+    
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+    
+      // TB OFF로 바꾸면 현재 TB 진행 중인 게임 종료
+      if(!state.tiebreakOn && state.tiebreak){
+        state.tiebreak = false;
+        state.tbPoints = {A:0, B:0};
+        resetPoints();
+      }
+    
+      // TB ON이고 아직 다음 게임 시작 전이면 즉시 TB 게임으로 전환
+      const trigger = getTbTrigger();
+      
+      if(state.tiebreakOn && !state.tiebreak &&
+         state.games.A===trigger && state.games.B===trigger &&
+         ((state.points.A|0)+(state.points.B|0)===0)){
+        state.tiebreak = true;
+        state.tbPoints = {A:0,B:0};
+      }
+    
+      saveState(state);
       render(true);
     });
 
