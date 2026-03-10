@@ -1136,45 +1136,43 @@
           </div>
         </div>
 
-        <div id="singlesInputs">
-          <div class="fieldLabel">단식 선수 이름</div>
-          <div class="namesGrid">
-            <input id="pA" type="text" placeholder="Player A" />
-            <input id="pB" type="text" placeholder="Player B" />
-          </div>
-
-          <div class="fieldLabel">첫 서브 선택</div>
-          <div class="serverRow" id="firstServerSinglesBtns">
-            <button class="serverBtn" id="btnSS_A" type="button">A</button>
-            <button class="serverBtn" id="btnSS_B" type="button">B</button>
-          </div>
-          <input id="firstServerSingles" type="hidden" value="A" />
+        <div id="singlesInputs" style="display:none;">
+        <div class="fieldLabel">단식 선수 이름</div>
+        <div class="namesGrid">
+          <input id="pA" type="text" placeholder="Player A" />
+          <input id="pB" type="text" placeholder="Player B" />
         </div>
-
-        <div id="doublesInputs" style="display:none;">
-          <div class="fieldLabel">복식 선수 이름</div>
-          <div class="namesGrid">
-            <input id="pA1" type="text" placeholder="A1" />
-            <input id="pB1" type="text" placeholder="B1" />
-            <input id="pA2" type="text" placeholder="A2" />
-            <input id="pB2" type="text" placeholder="B2" />
-          </div>
-
-          <div class="fieldLabel">첫 서브 선택</div>
-          <!-- ✅ 복식: 기존 4개 버튼(한줄)에서 1번 선택=녹색, 2번 선택=파랑 -->
-          <div class="serverRow" id="firstServerDoublesBtns">
-            <button class="serverBtn" id="btnFS_A1" type="button" data-server="A1">A1</button>
-            <button class="serverBtn" id="btnFS_A2" type="button" data-server="A2">A2</button>
-            <button class="serverBtn" id="btnFS_B1" type="button" data-server="B1">B1</button>
-            <button class="serverBtn" id="btnFS_B2" type="button" data-server="B2">B2</button>
-          </div>
-
-          <input id="firstServerDoubles" type="hidden" value="A1" />
-          <!-- 내부 상태 유지용(화면에는 노출하지 않음) -->
-          <input id="doublesStartTeam" type="hidden" value="A" />
-          <input id="doublesFirstA" type="hidden" value="A1" />
-          <input id="doublesFirstB" type="hidden" value="B1" />
+      
+        <div class="fieldLabel">첫 서브 선택</div>
+        <div class="serverRow" id="firstServerSinglesBtns">
+          <button class="serverBtn" id="btnSS_A" type="button">A</button>
+          <button class="serverBtn" id="btnSS_B" type="button">B</button>
         </div>
+        <input id="firstServerSingles" type="hidden" value="A" />
+      </div>
+      
+      <div id="doublesInputs" style="display:block;">
+        <div class="fieldLabel">복식 선수 이름</div>
+        <div class="namesGrid">
+          <input id="pA1" type="text" placeholder="A1" />
+          <input id="pB1" type="text" placeholder="B1" />
+          <input id="pA2" type="text" placeholder="A2" />
+          <input id="pB2" type="text" placeholder="B2" />
+        </div>
+      
+        <div class="fieldLabel">첫 서브 선택</div>
+        <div class="serverRow" id="firstServerDoublesBtns">
+          <button class="serverBtn" id="btnFS_A1" type="button" data-server="A1">A1</button>
+          <button class="serverBtn" id="btnFS_A2" type="button" data-server="A2">A2</button>
+          <button class="serverBtn" id="btnFS_B1" type="button" data-server="B1">B1</button>
+          <button class="serverBtn" id="btnFS_B2" type="button" data-server="B2">B2</button>
+        </div>
+      
+        <input id="firstServerDoubles" type="hidden" value="A1" />
+        <input id="doublesStartTeam" type="hidden" value="A" />
+        <input id="doublesFirstA" type="hidden" value="A1" />
+        <input id="doublesFirstB" type="hidden" value="B1" />
+      </div>
 
         <div class="btnRow">
           <button id="startBtn" class="btn btnPrimary" type="button">시작</button>
