@@ -1351,8 +1351,21 @@ function checkWinTiebreak(){
     if(btnPointB) btnPointB.textContent = `⬆ ${teamName(rightTeam)} 득점`;
 
     // team labels on cards
-    nameA.textContent = teamName(leftTeam);
-    nameB.textContent = teamName(rightTeam);
+    if(state.mode === "doubles"){
+      const leftLabel = (leftTeam === "A")
+        ? `${state.names?.A1 || "A1"} & ${state.names?.A2 || "A2"}`
+        : `${state.names?.B1 || "B1"} & ${state.names?.B2 || "B2"}`;
+    
+      const rightLabel = (rightTeam === "A")
+        ? `${state.names?.A1 || "A1"} & ${state.names?.A2 || "A2"}`
+        : `${state.names?.B1 || "B1"} & ${state.names?.B2 || "B2"}`;
+    
+      nameA.textContent = leftLabel;
+      nameB.textContent = rightLabel;
+    }else{
+      nameA.textContent = teamName(leftTeam);
+      nameB.textContent = teamName(rightTeam);
+    }
 
     const pL = displayPointForTeam(leftTeam);
     const pR = displayPointForTeam(rightTeam);
