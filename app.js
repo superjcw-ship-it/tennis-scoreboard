@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.28');
+    const v = (window.__TS_APP_VERSION || 'v22.24.29');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.28";
+  const APP_VERSION = "v22.24.29";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
