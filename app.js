@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.29');
+    const v = (window.__TS_APP_VERSION || 'v22.24.30');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.29";
+  const APP_VERSION = "v22.24.30";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -697,10 +697,10 @@ function wireResetChoiceModal(){
       mode:"doubles",
       bestOf:1,
       gamesToWin:4,
-      noAd:false,
+      noAd:true,
   
       // preference: whether to play a tiebreak game at 3:3 or 6:6
-      tiebreakOn:true,
+      tiebreakOn:false,
 
       names:{ A:"Player A", B:"Player B", A1:"A1", A2:"A2", B1:"B1", B2:"B2" },
 
@@ -750,6 +750,7 @@ function wireResetChoiceModal(){
 
     // preference: play tiebreak at 6:6
     if(typeof pick("tiebreakOn")==="boolean") s.tiebreakOn = pick("tiebreakOn");
+    else s.tiebreakOn = (s.gamesToWin === 6);
 
     if(typeof pick("tiebreak")==="boolean") s.tiebreak = pick("tiebreak");
     if(pick("tbPoints") && typeof pick("tbPoints")==="object") s.tbPoints = {A: +pick("tbPoints").A||0, B:+pick("tbPoints").B||0};
@@ -1386,8 +1387,9 @@ function checkWinTiebreak(){
     setsA.textContent  = String(sL);
     setsB.textContent  = String(sR);
 
-    // tiebreak superscript shown while TB at 6:6
-    if(state.tiebreak && state.games.A===6 && state.games.B===6){
+    // tiebreak superscript shown while TB at trigger score (3:3 or 6:6)
+    const tbTrigger = getTbTrigger();
+    if(state.tiebreak && state.games.A===tbTrigger && state.games.B===tbTrigger){
       tbSupA.textContent = String(state.tbPoints[leftTeam] ?? 0);
       tbSupB.textContent = String(state.tbPoints[rightTeam] ?? 0);
     }else{
@@ -2478,14 +2480,28 @@ function checkWinTiebreak(){
     gamesToWinSel?.addEventListener("change", ()=>{
       const v = parseInt(gamesToWinSel.value, 10) || 4;
       state.gamesToWin = ([4,6].includes(v) ? v : 4);
-    
-      // 현재 점수가 TB 진입 조건인데 TB OFF면 일반 게임 유지
+
+      // 게임 수 변경 시 TB 기본값 동기화: 4게임=OFF, 6게임=ON
+      state.tiebreakOn = (state.gamesToWin === 6);
+      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
+
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+
+      // TB OFF로 바뀌면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
       if(!state.tiebreakOn && state.tiebreak){
         state.tiebreak = false;
         state.tbPoints = {A:0, B:0};
         resetPoints();
       }
-    
+
+      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
+      if(state.tiebreakOn && !state.tiebreak &&
+         state.games.A===trigger && state.games.B===trigger && noPointStarted){
+        state.tiebreak = true;
+        state.tbPoints = {A:0,B:0};
+      }
+
       saveState(state);
       render(true);
     });
@@ -2821,19 +2837,20 @@ function checkWinTiebreak(){
   // 경기운영 설정 토글
   _onTap(document.getElementById('tbBadge'), ()=>{
     try{
-      // Toggle preference: play a tiebreak game at 6:6
       state.tiebreakOn = !state.tiebreakOn;
 
-      // If the user turns TB OFF while a TB game is active, switch back to normal game.
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+
+      // TB OFF면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
       if(!state.tiebreakOn && state.tiebreak){
         state.tiebreak = false;
         state.tbPoints = {A:0,B:0};
-        // Normal game scoring uses state.points (TB uses tbPoints). Start clean.
         resetPoints();
       }
 
-      // If the user turns TB ON at 6:6 before the next game has started (0-0), start TB immediately.
-      if(state.tiebreakOn && !state.tiebreak && state.games.A===6 && state.games.B===6 && ((state.points.A|0)+(state.points.B|0)===0)){
+      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
+      if(state.tiebreakOn && !state.tiebreak && state.games.A===trigger && state.games.B===trigger && noPointStarted){
         state.tiebreak = true;
         state.tbPoints = {A:0,B:0};
       }
