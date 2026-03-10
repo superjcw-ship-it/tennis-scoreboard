@@ -950,52 +950,36 @@
 .settingsVersionText{margin-top:6px; font-size:12px; opacity:.75;}
 
 
-/* v22.21: doubles names in portrait -> A1,A2 left / B1,B2 right */
+
+/* setup 복식 이름: 세로모드에서도 좌측 A1/A2, 우측 B1/B2 */
 @media (orientation:portrait){
-  #doublesBox .namesGrid{
-    grid-auto-flow: column;
+  #doublesInputs .namesGrid{
+    display:grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto auto;
+    grid-auto-flow: row;
+    gap: 10px;
   }
-}
-
-
-
-/* v22.25.x: modal doubles names grid matches setup (left A1/A2, right B1/B2) */
-@media (orientation:portrait){
-  #m_doublesBox .namesGrid{
-    grid-auto-flow: column;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-  }
+  #pA1{ grid-column:1; grid-row:1; }
+  #pA2{ grid-column:1; grid-row:2; }
+  #pB1{ grid-column:2; grid-row:1; }
+  #pB2{ grid-column:2; grid-row:2; }
 }
 
 @media (max-width: 520px){
-  #m_doublesBox .namesGrid{
-    display:grid;
-    grid-template-columns: 1fr 1fr !important;
-    grid-template-rows: auto auto !important;
-    grid-auto-flow: row !important;
-    gap: 10px !important;
-    width: 100% !important;
-  }
-  #m_doublesBox .namesGrid input{ min-width:0 !important; width:100% !important; box-sizing:border-box !important; }
-  #m_pA1{ grid-column:1; grid-row:1; }
-  #m_pA2{ grid-column:1; grid-row:2; }
-  #m_pB1{ grid-column:2; grid-row:1; }
-  #m_pB2{ grid-column:2; grid-row:2; }
-}
-
-/* v22.21: mobile portrait doubles grid force 2 columns and explicit placement */
-@media (max-width: 520px){
-  #doublesBox .namesGrid{
-    display:grid;
-    grid-template-columns: 1fr 1fr !important;
+  #doublesInputs .namesGrid{
+    display:grid !important;
+    width:100% !important;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
     grid-template-rows: auto auto !important;
     grid-auto-flow: row !important;
     gap: 10px !important;
   }
-  #doublesBox .namesGrid input{ min-width:0 !important; width:100% !important; }
+  #doublesInputs .namesGrid input{
+    min-width:0 !important;
+    width:100% !important;
+    box-sizing:border-box !important;
+  }
   #pA1{ grid-column:1; grid-row:1; }
   #pA2{ grid-column:1; grid-row:2; }
   #pB1{ grid-column:2; grid-row:1; }
@@ -1063,17 +1047,25 @@
   cursor: not-allowed;
 }
 
-  .setupRow2{
+.setupRow2{
   display:flex;
   gap:12px;
   align-items:flex-end;
+  flex-wrap:nowrap;
+}
+.setupCol{
+  flex:1 1 0;
+  min-width:0;
+}
+
+/* 세로모드에서도 좌우 유지 */
+@media (max-width: 560px){
+  .setupRow2{
+    flex-direction:row;
+    align-items:flex-end;
+    gap:10px;
   }
-  .setupCol{ flex:1; min-width:0; }
-  
-  /* 모바일에서 너무 좁으면 자동으로 세로로 쌓이게 */
-  @media (max-width: 560px){
-    .setupRow2{ flex-direction:column; align-items:stretch; }
-  }
+}
       
 </style>
   
