@@ -587,7 +587,7 @@ function debounce(fn, ms=120){
   // v22.18: reset helpers
   function resetScoresOnly(){
     try{
-      // keep match configuration (mode/bestOf/noAd/names/firstServer etc)
+      closeMatchResultModal();
       state.sets = {A:0,B:0};
       state.games = {A:0,B:0};
       resetPoints();
@@ -608,6 +608,7 @@ function debounce(fn, ms=120){
   function resetFullToSetup(){
     try{
       // full reset: clear everything and return to setup screen
+      closeMatchResultModal();
       state = defaultState();
       undoHistory = [];
       saveUndoHistory(undoHistory);
@@ -619,7 +620,59 @@ function debounce(fn, ms=120){
       showErr("초기화 오류:", err);
     }
   }
-
+  let _lastMatchResultWinner = null;
+  
+  function showMatchResultModal(){
+    try{
+      const modal = document.getElementById('matchResultModal');
+      const textEl = document.getElementById('matchResultWinText');
+      if(!modal || !textEl || !state.winner) return;
+  
+      textEl.textContent = `${state.winner} 승리!`;
+      modal.style.display = 'block';
+    }catch(err){
+      showErr("결과 모달 표시 오류:", err);
+    }
+  }
+  
+  function closeMatchResultModal(){
+    const modal = document.getElementById('matchResultModal');
+    if(modal) modal.style.display = 'none';
+  }
+  
+  function regameFromMatchResult(){
+    try{
+      closeMatchResultModal();
+      resetScoresOnly();   // started 상태 유지, 보드 화면 유지
+      state.started = true;
+      state.winner = null;
+      saveState(state);
+      render(true);
+      try{ document.querySelector(".wrap")?.scrollTo({top:0, left:0, behavior:"auto"}); }catch(_e){}
+    }catch(err){
+      showErr("REGAME 처리 오류:", err);
+    }
+  }
+  
+  function goSetupFromMatchResult(){
+    try{
+      closeMatchResultModal();
+      resetFullToSetup();  // 설정화면으로 이동 + 전체 초기화
+    }catch(err){
+      showErr("설정창 이동 오류:", err);
+    }
+  }
+  
+  function wireMatchResultModal(){
+    const backdrop = document.getElementById('matchResultBackdrop');
+    const regameBtn = document.getElementById('regameBtn');
+    const setupBtn = document.getElementById('goSetupAfterMatchBtn');
+  
+    _onTap(backdrop, ()=>{}); // 바깥 탭으로 닫히지 않게 막음
+    _onTap(regameBtn, ()=>{ regameFromMatchResult(); });
+    _onTap(setupBtn, ()=>{ goSetupFromMatchResult(); });
+  }
+    
 function wireResetChoiceModal(){
     onTap(document.getElementById('resetChoiceCloseBtn'), closeResetChoice);
     onTap(document.getElementById('resetChoiceBackdrop'), closeResetChoice);
@@ -1363,9 +1416,16 @@ function checkWinTiebreak(){
     if(state.winner){
       winnerText.style.display = "block";
       winnerText.textContent = `WINNER: ${state.winner}`;
+    
+      if(_lastMatchResultWinner !== state.winner){
+        _lastMatchResultWinner = state.winner;
+        setTimeout(()=>{ showMatchResultModal(); }, 30);
+      }
     }else{
       winnerText.style.display = "none";
       winnerText.textContent = "";
+      _lastMatchResultWinner = null;
+      closeMatchResultModal();
     }
 
     // warn styles
@@ -2772,6 +2832,7 @@ try{
     try{ wireSettingsModal_v2217(); }catch(_e){}
     try{ wireResetChoiceModal_v2217(); }catch(_e){}
     try{ wireTopButtons_v2217(); }catch(_e){}
+    try{ wireMatchResultModal(); }catch(_e){}
 setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 
     // Move point buttons above history (without touching HTML)
