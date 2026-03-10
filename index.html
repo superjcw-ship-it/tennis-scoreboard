@@ -196,6 +196,20 @@
       .namesGrid{ grid-template-columns:1fr; }
     }
 
+    /* 단식 이름도 모바일에서 좌우 2칸 유지 */
+    @media (max-width: 820px){
+      #singlesInputs .namesGrid{
+        display:grid !important;
+        grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
+        gap: 10px !important;
+      }
+      #singlesInputs .namesGrid input{
+        width:100% !important;
+        min-width:0 !important;
+        box-sizing:border-box !important;
+      }
+    }
+    
     .serverRow{
       display:grid;
       grid-template-columns: 1fr 1fr;
