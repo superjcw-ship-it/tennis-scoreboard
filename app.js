@@ -2448,25 +2448,25 @@ function checkWinTiebreak(){
     // setup mode toggle
     modeSel?.addEventListener("change", ()=>{
       const v = modeSel.value;
-      // keep state in sync immediately (rotation/keyboard triggers render)
+    
       state.mode = v;
       saveState(state);
-
-      singlesInputs.style.display = (v==="doubles") ? "none" : "block";
-      doublesInputs.style.display = (v==="doubles") ? "block" : "none";
+    
+      if(singlesInputs) singlesInputs.style.display = (v === "singles") ? "block" : "none";
+      if(doublesInputs) doublesInputs.style.display = (v === "doubles") ? "block" : "none";
+    
       updateFirstServerButtonLabels();
-      // keep selected server button visible
       setFirstServerSingles(firstServerSinglesHidden?.value || "A");
-      // doubles serve picks (green/blue)
-      if(v==="doubles"){
-        // reset pick cycle so next click becomes GREEN
+    
+      if(v === "doubles"){
         try{ doublesPickStage = 0; }catch(_e){}
-        // ensure hidden defaults exist
         if(doublesStartTeamHidden && !doublesStartTeamHidden.value) doublesStartTeamHidden.value = "A";
         if(doublesFirstAHidden && !doublesFirstAHidden.value) doublesFirstAHidden.value = "A1";
         if(doublesFirstBHidden && !doublesFirstBHidden.value) doublesFirstBHidden.value = "B1";
         refreshDoublesServeUI();
       }
+    
+      render(true);
     });
 
     bestOfSel?.addEventListener("change", ()=>{
