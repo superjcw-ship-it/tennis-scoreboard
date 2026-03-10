@@ -2510,8 +2510,6 @@ function checkWinTiebreak(){
       }
     
       // TB ON이고 아직 다음 게임 시작 전이면 즉시 TB 게임으로 전환
-      const trigger = getTbTrigger();
-      
       if(state.tiebreakOn && !state.tiebreak &&
          state.games.A===trigger && state.games.B===trigger &&
          ((state.points.A|0)+(state.points.B|0)===0)){
