@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.32');
+    const v = (window.__TS_APP_VERSION || 'v22.24.30');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.32";
+  const APP_VERSION = "v22.24.30";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -610,6 +610,9 @@ function debounce(fn, ms=120){
     try{
       // full reset: clear everything and return to setup screen
       closeMatchResultModal();
+      _lastMatchResultWinner = null;
+      _completedSaveKey = null;
+      _completedSavePromise = null;
       state = defaultState();
       undoHistory = [];
       saveUndoHistory(undoHistory);
@@ -621,67 +624,6 @@ function debounce(fn, ms=120){
       showErr("초기화 오류:", err);
     }
   }
-  let _lastMatchResultWinner = null;
-  let _lastAutoSavedMatchKey = null;
-  let _pendingAutoSavePromise = null;
-  
-  function showMatchResultModal(){
-    try{
-      const modal = document.getElementById('matchResultModal');
-      const textEl = document.getElementById('matchResultWinText');
-      if(!modal || !textEl || !state.winner) return;
-  
-      textEl.textContent = `${state.winner} 승리!`;
-      modal.style.display = 'block';
-    }catch(err){
-      showErr("결과 모달 표시 오류:", err);
-    }
-  }
-  
-  function closeMatchResultModal(){
-    const modal = document.getElementById('matchResultModal');
-    if(modal) modal.style.display = 'none';
-  }
-  
-  async function regameFromMatchResult(){
-    try{
-      await autoSaveCompletedMatch();
-      closeMatchResultModal();
-      _pendingAutoSavePromise = null;
-      _lastAutoSavedMatchKey = null;
-      resetScoresOnly();   // started 상태 유지, 보드 화면 유지
-      state.started = true;
-      state.winner = null;
-      saveState(state);
-      render(true);
-      try{ document.querySelector(".wrap")?.scrollTo({top:0, left:0, behavior:"auto"}); }catch(_e){}
-    }catch(err){
-      showErr("REGAME 처리 오류:", err);
-    }
-  }
-  
-  async function goSetupFromMatchResult(){
-    try{
-      await autoSaveCompletedMatch();
-      closeMatchResultModal();
-      _pendingAutoSavePromise = null;
-      _lastAutoSavedMatchKey = null;
-      resetFullToSetup();  // 설정화면으로 이동 + 전체 초기화
-    }catch(err){
-      showErr("설정창 이동 오류:", err);
-    }
-  }
-  
-  function wireMatchResultModal(){
-    const backdrop = document.getElementById('matchResultBackdrop');
-    const regameBtn = document.getElementById('regameBtn');
-    const setupBtn = document.getElementById('goSetupAfterMatchBtn');
-  
-    _onTap(backdrop, ()=>{}); // 바깥 탭으로 닫히지 않게 막음
-    _onTap(regameBtn, async ()=>{ await regameFromMatchResult(); });
-    _onTap(setupBtn, async ()=>{ await goSetupFromMatchResult(); });
-  }
-    
 function wireResetChoiceModal(){
     onTap(document.getElementById('resetChoiceCloseBtn'), closeResetChoice);
     onTap(document.getElementById('resetChoiceBackdrop'), closeResetChoice);
@@ -1445,13 +1387,11 @@ function checkWinTiebreak(){
       if(_lastMatchResultWinner !== state.winner){
         _lastMatchResultWinner = state.winner;
         setTimeout(()=>{ showMatchResultModal(); }, 30);
-        setTimeout(()=>{ autoSaveCompletedMatch(); }, 0);
       }
     }else{
       winnerText.style.display = "none";
       winnerText.textContent = "";
       _lastMatchResultWinner = null;
-      _lastAutoSavedMatchKey = null;
       closeMatchResultModal();
     }
 
@@ -2948,6 +2888,169 @@ setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 })()
 })();
 
+
+let _lastMatchResultWinner = null;
+let _completedSaveKey = null;
+let _completedSavePromise = null;
+
+function getCompletedMatchSaveKey(){
+  if(!state || !state.winner) return null;
+  const names = state.names || {};
+  const nameKey = [names.A, names.B, names.A1, names.A2, names.B1, names.B2].join('|');
+  return JSON.stringify({
+    winner: state.winner,
+    mode: state.mode,
+    bestOf: state.bestOf,
+    gamesToWin: state.gamesToWin,
+    noAd: !!state.noAd,
+    tiebreakOn: !!state.tiebreakOn,
+    sets: state.sets,
+    games: state.games,
+    completedSets: state.completedSets,
+    nameKey
+  });
+}
+
+function buildRecordPayload(saveReason = 'manual'){
+  const snap = window.__TS_SNAPSHOT?.();
+  if(!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
+
+  const now = new Date().toISOString();
+  const snapState = JSON.parse(JSON.stringify(snap.state || state));
+  const snapUndo = JSON.parse(JSON.stringify(snap.undoHistory || []));
+
+  const isCompleted = !!snapState.winner;
+  if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
+
+  return {
+    schema_version: "match_v1",
+    saved_at: now,
+    status: isCompleted ? "completed" : "in_progress",
+    save_reason: saveReason,
+    completed_at: isCompleted ? (snapState.completedAt || now) : null,
+    state: snapState,
+    undoHistory: snapUndo
+  };
+}
+
+async function saveCurrentRecord(saveReason = 'manual'){
+  if (!supabase) await initSupabase();
+  const record = buildRecordPayload(saveReason);
+
+  const { error } = await supabase
+    .from("match_records")
+    .insert({ app_version: APP_VERSION, data: record });
+
+  if (error) throw error;
+  return record;
+}
+
+async function ensureCompletedMatchSaved(){
+  if(!state || !state.winner) return null;
+
+  const key = getCompletedMatchSaveKey();
+  if(!key) return null;
+
+  if(_completedSaveKey === key){
+    return _completedSavePromise || key;
+  }
+
+  _completedSaveKey = key;
+  _completedSavePromise = (async ()=>{
+    try{
+      return await saveCurrentRecord('auto_completed');
+    }catch(err){
+      _completedSaveKey = null;
+      throw err;
+    }finally{
+      _completedSavePromise = null;
+    }
+  })();
+
+  return _completedSavePromise;
+}
+
+function showMatchResultModal(){
+  try{
+    const modal = document.getElementById('matchResultModal');
+    const textEl = document.getElementById('matchResultWinText');
+    if(!modal || !textEl || !state.winner) return;
+
+    textEl.textContent = `${state.winner} 승리!`;
+    modal.style.display = 'block';
+  }catch(err){
+    showErr("결과 모달 표시 오류:", err);
+  }
+}
+
+function closeMatchResultModal(){
+  const modal = document.getElementById('matchResultModal');
+  if(modal) modal.style.display = 'none';
+}
+
+async function regameFromMatchResult(){
+  try{
+    await ensureCompletedMatchSaved();
+
+    closeMatchResultModal();
+    resetScoresOnly();
+    state.started = true;
+    state.winner = null;
+    saveState(state);
+    render(true);
+
+    try{
+      document.querySelector(".wrap")?.scrollTo({ top:0, left:0, behavior:"auto" });
+    }catch(_e){}
+  }catch(err){
+    showErr("REGAME 처리 오류:", err);
+  }
+}
+
+async function goSetupFromMatchResult(){
+  try{
+    await ensureCompletedMatchSaved();
+
+    closeMatchResultModal();
+    resetFullToSetup();
+  }catch(err){
+    showErr("설정창 이동 오류:", err);
+  }
+}
+
+function wireMatchResultModal(){
+  const backdrop = document.getElementById('matchResultBackdrop');
+  const regameBtn = document.getElementById('regameBtn');
+  const setupBtn = document.getElementById('goSetupAfterMatchBtn');
+
+  if(backdrop && !backdrop.__wiredMatchResult){
+    backdrop.__wiredMatchResult = true;
+    backdrop.addEventListener('click', (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
+  if(regameBtn && !regameBtn.__wiredMatchResult){
+    regameBtn.__wiredMatchResult = true;
+    regameBtn.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      await regameFromMatchResult();
+    });
+  }
+
+  if(setupBtn && !setupBtn.__wiredMatchResult){
+    setupBtn.__wiredMatchResult = true;
+    setupBtn.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      await goSetupFromMatchResult();
+    });
+  }
+}
+
+
 // ===== Supabase init (from /api/config) =====
 
 async function initSupabase() {
@@ -2967,83 +3070,9 @@ async function initSupabase() {
   console.log("✅ Supabase ready");
 }
   // ===========================================
-
-  function getAutoSaveMatchKey(){
-    try{
-      const s = window.__TS_SNAPSHOT?.();
-      const st = s?.state || state || {};
-      const winner = st.winner || "";
-      const setsA = st.sets?.A ?? 0;
-      const setsB = st.sets?.B ?? 0;
-      const gamesA = st.games?.A ?? 0;
-      const gamesB = st.games?.B ?? 0;
-      const cs = Array.isArray(st.completedSets) ? JSON.stringify(st.completedSets) : "[]";
-      return [winner, setsA, setsB, gamesA, gamesB, cs].join("|");
-    }catch(_e){
-      return String(Date.now());
-    }
-  }
-
-  async function autoSaveCompletedMatch(){
-    if(!state?.winner) return false;
-    const key = getAutoSaveMatchKey();
-    if(_lastAutoSavedMatchKey === key) return true;
-    if(_pendingAutoSavePromise) return _pendingAutoSavePromise;
-
-    _pendingAutoSavePromise = (async ()=>{
-      // completedAt 메타가 없으면 한 번만 기록
-      try{
-        if(!state.completedAt) state.completedAt = new Date().toISOString();
-        saveState(state);
-      }catch(_e){}
-
-      try{
-        await saveTestRecord({ isCompleted: true, saveReason: "auto_completed" });
-        _lastAutoSavedMatchKey = key;
-        return true;
-      }catch(err){
-        console.error("자동 저장 실패:", err);
-        return false;
-      }finally{
-        _pendingAutoSavePromise = null;
-      }
-    })();
-
-    return _pendingAutoSavePromise;
-  }
   
-  async function saveTestRecord(opts = {}) {
-    if (!supabase) await initSupabase();
-  
-    const now = new Date().toISOString();
-  
-    // ✅ 현재 경기 상태 스냅샷 가져오기
-    const snap = window.__TS_SNAPSHOT?.();
-    if (!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
-
-    const isCompleted = !!opts.isCompleted;
-    const saveReason = opts.saveReason || (isCompleted ? "auto_completed" : "manual_save");
-    if (isCompleted && !snap.state.completedAt) {
-      snap.state.completedAt = now;
-    }
-  
-    // ✅ 실제 "현재 상태 전체"를 data.state로 저장
-    const record = {
-      schema_version: "match_v1",
-      saved_at: now,
-      completed_at: isCompleted ? (snap.state.completedAt || now) : null,
-      status: isCompleted ? "completed" : "in_progress",
-      save_reason: saveReason,
-      state: snap.state,
-      undoHistory: snap.undoHistory
-    };
-  
-    const { error } = await supabase
-      .from("match_records")
-      .insert({ app_version: APP_VERSION, data: record });
-  
-    if (error) throw error;
-    console.log("✅ insert ok (current state saved)", record.status, record.save_reason);
+  async function saveTestRecord() {
+    return await saveCurrentRecord('manual');
   }
 
 async function loadRecentRecords(limit = 10) {
