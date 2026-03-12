@@ -196,20 +196,6 @@
       .namesGrid{ grid-template-columns:1fr; }
     }
 
-    /* 단식 이름도 모바일에서 좌우 2칸 유지 */
-    @media (max-width: 820px){
-      #singlesInputs .namesGrid{
-        display:grid !important;
-        grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
-        gap: 10px !important;
-      }
-      #singlesInputs .namesGrid input{
-        width:100% !important;
-        min-width:0 !important;
-        box-sizing:border-box !important;
-      }
-    }
-    
     .serverRow{
       display:grid;
       grid-template-columns: 1fr 1fr;
@@ -230,14 +216,6 @@
     }
     @media (max-width: 820px){
       .serverRow{ grid-template-columns:1fr; }
-      #firstServerSinglesBtns,
-      #m_firstServerSinglesBtns{
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      }
-      #firstServerDoublesBtns,
-      #m_firstServerDoublesBtns{
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-      }
     }
 
     .serverBtns{ display:flex; gap:12px; flex-wrap:wrap; }
@@ -610,9 +588,8 @@
     .modalSheet{
       position:absolute;
       left: 50%;
-      top: 50%;
-      bottom: auto;
-      transform: translate(-50%, -50%);
+      transform: translateX(-50%);
+      bottom: 12px;
       width: min(720px, calc(100% - 18px));
       max-height: calc(var(--appH, 100vh) - 24px);
       overflow:hidden;
@@ -621,49 +598,6 @@
       background: rgba(18,18,20,.96);
       box-shadow: 0 20px 80px rgba(0,0,0,.6);
     }
-
-    .resultWinText{
-      text-align:center;
-      font-size: 28px;
-      font-weight: 950;
-      line-height: 1.25;
-      margin: 8px 0 4px;
-    }
-    
-    .resultSubText{
-      text-align:center;
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 14px;
-    }
-    
-    .resultBtnRow{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-top: 12px;
-    }
-    
-    .resultBtnRow .btn,
-    .resultBtnRow .badge{
-      width: 100%;
-      justify-content: center;
-    }
-    
-    @media (max-width: 520px){
-      .resultWinText{
-        font-size: 24px;
-      }
-      .resultBtnRow{
-        grid-template-columns: 1fr;
-      }
-    }
-      @media (orientation: portrait){
-        .modalSheet{
-          width: min(92vw, 520px);
-          max-height: calc(var(--appH, 100vh) - 40px);
-        }
-      }  
     .modalHeader{
       display:flex; align-items:center; justify-content:space-between;
       gap: 10px;
@@ -972,36 +906,52 @@
 .settingsVersionText{margin-top:6px; font-size:12px; opacity:.75;}
 
 
-
-/* setup 복식 이름: 세로모드에서도 좌측 A1/A2, 우측 B1/B2 */
+/* v22.21: doubles names in portrait -> A1,A2 left / B1,B2 right */
 @media (orientation:portrait){
-  #doublesInputs .namesGrid{
-    display:grid;
+  #doublesBox .namesGrid{
+    grid-auto-flow: column;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto auto;
-    grid-auto-flow: row;
-    gap: 10px;
   }
-  #pA1{ grid-column:1; grid-row:1; }
-  #pA2{ grid-column:1; grid-row:2; }
-  #pB1{ grid-column:2; grid-row:1; }
-  #pB2{ grid-column:2; grid-row:2; }
+}
+
+
+
+/* v22.25.x: modal doubles names grid matches setup (left A1/A2, right B1/B2) */
+@media (orientation:portrait){
+  #m_doublesBox .namesGrid{
+    grid-auto-flow: column;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
 }
 
 @media (max-width: 520px){
-  #doublesInputs .namesGrid{
-    display:grid !important;
-    width:100% !important;
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
+  #m_doublesBox .namesGrid{
+    display:grid;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: auto auto !important;
+    grid-auto-flow: row !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+  #m_doublesBox .namesGrid input{ min-width:0 !important; width:100% !important; box-sizing:border-box !important; }
+  #m_pA1{ grid-column:1; grid-row:1; }
+  #m_pA2{ grid-column:1; grid-row:2; }
+  #m_pB1{ grid-column:2; grid-row:1; }
+  #m_pB2{ grid-column:2; grid-row:2; }
+}
+
+/* v22.21: mobile portrait doubles grid force 2 columns and explicit placement */
+@media (max-width: 520px){
+  #doublesBox .namesGrid{
+    display:grid;
+    grid-template-columns: 1fr 1fr !important;
     grid-template-rows: auto auto !important;
     grid-auto-flow: row !important;
     gap: 10px !important;
   }
-  #doublesInputs .namesGrid input{
-    min-width:0 !important;
-    width:100% !important;
-    box-sizing:border-box !important;
-  }
+  #doublesBox .namesGrid input{ min-width:0 !important; width:100% !important; }
   #pA1{ grid-column:1; grid-row:1; }
   #pA2{ grid-column:1; grid-row:2; }
   #pB1{ grid-column:2; grid-row:1; }
@@ -1069,25 +1019,17 @@
   cursor: not-allowed;
 }
 
-.setupRow2{
+  .setupRow2{
   display:flex;
   gap:12px;
   align-items:flex-end;
-  flex-wrap:nowrap;
-}
-.setupCol{
-  flex:1 1 0;
-  min-width:0;
-}
-
-/* 세로모드에서도 좌우 유지 */
-@media (max-width: 560px){
-  .setupRow2{
-    flex-direction:row;
-    align-items:flex-end;
-    gap:10px;
   }
-}
+  .setupCol{ flex:1; min-width:0; }
+  
+  /* 모바일에서 너무 좁으면 자동으로 세로로 쌓이게 */
+  @media (max-width: 560px){
+    .setupRow2{ flex-direction:column; align-items:stretch; }
+  }
       
 </style>
   
@@ -1115,7 +1057,7 @@
             <div class="setupCol">
               <label for="bestOf">세트 방식</label>
               <select id="bestOf">
-                <option value="1" selected>1세트 1선승</option>
+                <option value="1">1세트 1선승</option>
                 <option value="3">3세트 2선승</option>
                 <option value="5">5세트 3선승</option>
               </select>
@@ -1125,76 +1067,64 @@
             <div class="setupCol">
               <label for="gamesToWin">게임 수</label>
               <select id="gamesToWin">
-                <option value="4" selected>4게임</option>
+                <option value="4">4게임</option>
                 <option value="6">6게임</option>
               </select>
             </div>
           </div>
 
-          <div class="setupRow2">
-            <div class="setupCol">
-              <div class="fieldLabel">NO-AD</div>
-              <div id="noAdPill" class="noAdPill">
-                <span class="pillTxt">OFF</span>
-                <label class="switch" aria-label="NO-AD">
-                  <input id="noAd" type="checkbox" checked />
-                  <span class="slider"></span>
-                </label>
-                <span class="pillTxt">ON</span>
-              </div>
-            </div>
-          
-            <div class="setupCol">
-              <div class="fieldLabel">TB</div>
-              <div id="tbPill" class="noAdPill">
-                <span class="pillTxt">OFF</span>
-                <label class="switch" aria-label="TB">
-                  <input id="tbOn" type="checkbox" />
-                  <span class="slider"></span>
-                </label>
-                <span class="pillTxt">ON</span>
-              </div>
+          <div class="field">
+            <div class="fieldLabel">NO-AD</div>
+            <div id="noAdPill" class="noAdPill">
+              <span class="pillTxt">OFF</span>
+              <label class="switch" aria-label="NO-AD">
+                <input id="noAd" type="checkbox" checked />
+                <span class="slider"></span>
+              </label>
+              <span class="pillTxt">ON</span>
             </div>
           </div>
         </div>
 
-        <div id="singlesInputs" style="display:none;">
-        <div class="fieldLabel">단식 선수 이름</div>
-        <div class="namesGrid">
-          <input id="pA" type="text" placeholder="Player A" />
-          <input id="pB" type="text" placeholder="Player B" />
+        <div id="singlesInputs">
+          <div class="fieldLabel">단식 선수 이름</div>
+          <div class="namesGrid">
+            <input id="pA" type="text" placeholder="Player A" />
+            <input id="pB" type="text" placeholder="Player B" />
+          </div>
+
+          <div class="fieldLabel">첫 서브 선택</div>
+          <div class="serverRow" id="firstServerSinglesBtns">
+            <button class="serverBtn" id="btnSS_A" type="button">A</button>
+            <button class="serverBtn" id="btnSS_B" type="button">B</button>
+          </div>
+          <input id="firstServerSingles" type="hidden" value="A" />
         </div>
-      
-        <div class="fieldLabel">첫 서브 선택</div>
-        <div class="serverRow" id="firstServerSinglesBtns">
-          <button class="serverBtn" id="btnSS_A" type="button">A</button>
-          <button class="serverBtn" id="btnSS_B" type="button">B</button>
+
+        <div id="doublesInputs" style="display:none;">
+          <div class="fieldLabel">복식 선수 이름</div>
+          <div class="namesGrid">
+            <input id="pA1" type="text" placeholder="A1" />
+            <input id="pB1" type="text" placeholder="B1" />
+            <input id="pA2" type="text" placeholder="A2" />
+            <input id="pB2" type="text" placeholder="B2" />
+          </div>
+
+          <div class="fieldLabel">첫 서브 선택</div>
+          <!-- ✅ 복식: 기존 4개 버튼(한줄)에서 1번 선택=녹색, 2번 선택=파랑 -->
+          <div class="serverRow" id="firstServerDoublesBtns">
+            <button class="serverBtn" id="btnFS_A1" type="button" data-server="A1">A1</button>
+            <button class="serverBtn" id="btnFS_A2" type="button" data-server="A2">A2</button>
+            <button class="serverBtn" id="btnFS_B1" type="button" data-server="B1">B1</button>
+            <button class="serverBtn" id="btnFS_B2" type="button" data-server="B2">B2</button>
+          </div>
+
+          <input id="firstServerDoubles" type="hidden" value="A1" />
+          <!-- 내부 상태 유지용(화면에는 노출하지 않음) -->
+          <input id="doublesStartTeam" type="hidden" value="A" />
+          <input id="doublesFirstA" type="hidden" value="A1" />
+          <input id="doublesFirstB" type="hidden" value="B1" />
         </div>
-        <input id="firstServerSingles" type="hidden" value="A" />
-      </div>
-      
-      <div id="doublesInputs" style="display:block;">
-        <div class="fieldLabel">복식 선수 이름</div>
-        <div class="namesGrid">
-          <input id="pA1" type="text" placeholder="A1" />
-          <input id="pB1" type="text" placeholder="B1" />
-          <input id="pA2" type="text" placeholder="A2" />
-          <input id="pB2" type="text" placeholder="B2" />
-        </div>
-      
-        <div class="fieldLabel">첫 서브 선택</div>
-        <div class="serverRow" id="firstServerDoublesBtns">
-          <button class="serverBtn" id="btnFS_A1" type="button" data-server="A1">A1</button>
-          <button class="serverBtn" id="btnFS_A2" type="button" data-server="A2">A2</button>
-          <button class="serverBtn" id="btnFS_B1" type="button" data-server="B1">B1</button>
-          <button class="serverBtn" id="btnFS_B2" type="button" data-server="B2">B2</button>
-        </div>
-      
-        <input id="firstServerDoubles" type="hidden" value="A1" />
-        <input id="doublesStartTeam" type="hidden" value="A" />
-        <input id="doublesFirstA" type="hidden" value="A1" />
-        <input id="doublesFirstB" type="hidden" value="B1" />
-      </div>
 
         <div class="btnRow">
           <button id="startBtn" class="btn btnPrimary" type="button">시작</button>
@@ -1332,7 +1262,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="리셋 선택">
             <div class="modalHeader">
               <div class="modalTitle">리셋
-        </div>
+</div>
               <button class="iconBtn" id="resetChoiceCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
             <div class="modalBody">
@@ -1350,32 +1280,13 @@
           </div>
         </div>
 
-        <!-- ===== Match Result Modal ===== -->
-        <div id="matchResultModal" class="modal" style="display:none;">
-          <div class="modalBackdrop" id="matchResultBackdrop"></div>
-          <div class="modalSheet" role="dialog" aria-modal="true" aria-label="경기 완료">
-            <div class="modalHeader">
-              <div class="modalTitle">게임 완료</div>
-            </div>
-            <div class="modalBody">
-              <div id="matchResultWinText" class="resultWinText">A1 &amp; A2 승리!</div>
-              <div class="resultSubText">다음 동작을 선택하세요.</div>
-        
-              <div class="resultBtnRow">
-                <button id="regameBtn" class="btn btnPrimary" type="button">REGAME</button>
-                <button id="goSetupAfterMatchBtn" class="btn" type="button">설정창</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        
         <!-- ===== Settings Modal (v22.8) ===== -->
         <div id="settingsModal" class="modal" style="display:none;">
           <div class="modalBackdrop" id="settingsBackdrop"></div>
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.30</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.32</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1482,14 +1393,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.30"></script>
+  <script src="app.js?v=v22.24.32"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.30").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.32").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.30</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.32</div>
 
 </body>
 </html>
