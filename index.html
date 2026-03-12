@@ -230,14 +230,6 @@
     }
     @media (max-width: 820px){
       .serverRow{ grid-template-columns:1fr; }
-      #firstServerSinglesBtns,
-      #m_firstServerSinglesBtns{
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      }
-      #firstServerDoublesBtns,
-      #m_firstServerDoublesBtns{
-        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-      }
     }
 
     .serverBtns{ display:flex; gap:12px; flex-wrap:wrap; }
@@ -1137,7 +1129,7 @@
               <div id="noAdPill" class="noAdPill">
                 <span class="pillTxt">OFF</span>
                 <label class="switch" aria-label="NO-AD">
-                  <input id="noAd" type="checkbox" checked />
+                  <input id="noAd" type="checkbox" />
                   <span class="slider"></span>
                 </label>
                 <span class="pillTxt">ON</span>
@@ -1149,7 +1141,7 @@
               <div id="tbPill" class="noAdPill">
                 <span class="pillTxt">OFF</span>
                 <label class="switch" aria-label="TB">
-                  <input id="tbOn" type="checkbox" />
+                  <input id="tbOn" type="checkbox" checked />
                   <span class="slider"></span>
                 </label>
                 <span class="pillTxt">ON</span>
@@ -1375,7 +1367,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.34</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.29</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1482,14 +1474,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.34"></script>
+  <script src="app.js?v=v22.24.29"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.34").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.29").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.34</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.29</div>
 
 </body>
 </html>
