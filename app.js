@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.32');
+    const v = (window.__TS_APP_VERSION || 'v22.24.31');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.32";
+  const APP_VERSION = "v22.24.31";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -309,6 +309,7 @@ function debounce(fn, ms=120){
   const bestOfSel = $("bestOf");
   const gamesToWinSel = $("gamesToWin");
   const noAdChk = $("noAd");
+  const tbOnChk = $("tbOn");
 
   const singlesInputs = $("singlesInputs");
   const doublesInputs = $("doublesInputs");
@@ -587,8 +588,7 @@ function debounce(fn, ms=120){
   // v22.18: reset helpers
   function resetScoresOnly(){
     try{
-      // keep match configuration (mode/bestOf/noAd/names/firstServer etc)
-      _lastAutoSavedMatchKey = null;
+      closeMatchResultModal();
       state.sets = {A:0,B:0};
       state.games = {A:0,B:0};
       resetPoints();
@@ -597,7 +597,6 @@ function debounce(fn, ms=120){
       state.gameHistory = [];
       state.setGameHistories = [];
       state.winner = null;
-      state.completedAt = null;
       undoHistory = [];
       saveUndoHistory(undoHistory);
       saveState(state);
@@ -610,9 +609,9 @@ function debounce(fn, ms=120){
   function resetFullToSetup(){
     try{
       // full reset: clear everything and return to setup screen
+      closeMatchResultModal();
       state = defaultState();
       undoHistory = [];
-      _lastAutoSavedMatchKey = null;
       saveUndoHistory(undoHistory);
       saveState(state);
       showSetup(true);
@@ -622,60 +621,62 @@ function debounce(fn, ms=120){
       showErr("초기화 오류:", err);
     }
   }
-
+  let _lastMatchResultWinner = null;
   let _lastAutoSavedMatchKey = null;
-
-  function buildMatchSaveKey(snapState){
+  
+  function showMatchResultModal(){
     try{
-      const s = snapState || state || {};
-      return JSON.stringify({
-        winner: s.winner || "",
-        sets: s.sets || {},
-        games: s.games || {},
-        completedSets: s.completedSets || [],
-        completedAt: s.completedAt || ""
-      });
-    }catch(_e){
-      return `${state?.winner || ""}-${Date.now()}`;
-    }
-  }
-
-  async function saveMatchRecord({ reason = "manual" } = {}) {
-    if (!supabase) await initSupabase();
-
-    const now = new Date().toISOString();
-    const snap = window.__TS_SNAPSHOT?.();
-    if (!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
-
-    const record = {
-      schema_version: "match_v1",
-      saved_at: now,
-      save_reason: reason,
-      state: snap.state,
-      undoHistory: snap.undoHistory
-    };
-
-    const { error } = await supabase
-      .from("match_records")
-      .insert({ app_version: APP_VERSION, data: record });
-
-    if (error) throw error;
-    console.log(`✅ insert ok (${reason})`);
-    return record;
-  }
-
-  async function autoSaveCompletedMatch(){
-    try{
-      if(!state?.winner) return;
-      const saveKey = buildMatchSaveKey(state);
-      if(saveKey === _lastAutoSavedMatchKey) return;
-      await saveMatchRecord({ reason: "completed_auto" });
-      _lastAutoSavedMatchKey = saveKey;
+      const modal = document.getElementById('matchResultModal');
+      const textEl = document.getElementById('matchResultWinText');
+      if(!modal || !textEl || !state.winner) return;
+  
+      textEl.textContent = `${state.winner} 승리!`;
+      modal.style.display = 'block';
     }catch(err){
-      console.error('❌ auto save failed:', err);
+      showErr("결과 모달 표시 오류:", err);
     }
   }
-
+  
+  function closeMatchResultModal(){
+    const modal = document.getElementById('matchResultModal');
+    if(modal) modal.style.display = 'none';
+  }
+  
+  function regameFromMatchResult(){
+    try{
+      closeMatchResultModal();
+      _lastAutoSavedMatchKey = null;
+      resetScoresOnly();   // started 상태 유지, 보드 화면 유지
+      state.started = true;
+      state.winner = null;
+      saveState(state);
+      render(true);
+      try{ document.querySelector(".wrap")?.scrollTo({top:0, left:0, behavior:"auto"}); }catch(_e){}
+    }catch(err){
+      showErr("REGAME 처리 오류:", err);
+    }
+  }
+  
+  function goSetupFromMatchResult(){
+    try{
+      closeMatchResultModal();
+      _lastAutoSavedMatchKey = null;
+      resetFullToSetup();  // 설정화면으로 이동 + 전체 초기화
+    }catch(err){
+      showErr("설정창 이동 오류:", err);
+    }
+  }
+  
+  function wireMatchResultModal(){
+    const backdrop = document.getElementById('matchResultBackdrop');
+    const regameBtn = document.getElementById('regameBtn');
+    const setupBtn = document.getElementById('goSetupAfterMatchBtn');
+  
+    _onTap(backdrop, ()=>{}); // 바깥 탭으로 닫히지 않게 막음
+    _onTap(regameBtn, ()=>{ regameFromMatchResult(); });
+    _onTap(setupBtn, ()=>{ goSetupFromMatchResult(); });
+  }
+    
 function wireResetChoiceModal(){
     onTap(document.getElementById('resetChoiceCloseBtn'), closeResetChoice);
     onTap(document.getElementById('resetChoiceBackdrop'), closeResetChoice);
@@ -697,12 +698,12 @@ function wireResetChoiceModal(){
     return {
       started:false,
       mode:"doubles",
-      bestOf:3,
-      gamesToWin:6,   // ✅ 추가: 4 또는 6 (기본 6)
+      bestOf:1,
+      gamesToWin:4,
       noAd:true,
-
-      // preference: whether to play a tiebreak game at 6:6 (default ON)
-      tiebreakOn:true,
+  
+      // preference: whether to play a tiebreak game at 3:3 or 6:6
+      tiebreakOn:false,
 
       names:{ A:"Player A", B:"Player B", A1:"A1", A2:"A2", B1:"B1", B2:"B2" },
 
@@ -752,6 +753,7 @@ function wireResetChoiceModal(){
 
     // preference: play tiebreak at 6:6
     if(typeof pick("tiebreakOn")==="boolean") s.tiebreakOn = pick("tiebreakOn");
+    else s.tiebreakOn = (s.gamesToWin === 6);
 
     if(typeof pick("tiebreak")==="boolean") s.tiebreak = pick("tiebreak");
     if(pick("tbPoints") && typeof pick("tbPoints")==="object") s.tbPoints = {A: +pick("tbPoints").A||0, B:+pick("tbPoints").B||0};
@@ -772,9 +774,9 @@ function wireResetChoiceModal(){
     // sanity
     if(s.mode !== "doubles") s.mode = "singles";
     // bestOf: 1/3/5만 허용
-    if (![1,3,5].includes(s.bestOf)) s.bestOf = 3;
+    if (![1,3,5].includes(s.bestOf)) s.bestOf = 1;
     // gamesToWin: 4/6만 허용 (추가)
-    if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 6;
+    if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
     if(Array.isArray(pick("setGameHistories"))) {
@@ -1330,9 +1332,10 @@ function checkWinTiebreak(){
     // setup UI sync
     if(modeSel){
       modeSel.value = state.mode;
-      bestOfSel.value = String(state.bestOf);
-      if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 6);
+      bestOfSel.value = String(state.bestOf || 1);
+      if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 4);
       if(noAdChk) noAdChk.checked = !!state.noAd;
+      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
 
       if(state.mode==="doubles"){
         singlesInputs.style.display = "none";
@@ -1352,8 +1355,21 @@ function checkWinTiebreak(){
     if(btnPointB) btnPointB.textContent = `⬆ ${teamName(rightTeam)} 득점`;
 
     // team labels on cards
-    nameA.textContent = teamName(leftTeam);
-    nameB.textContent = teamName(rightTeam);
+    if(state.mode === "doubles"){
+      const leftLabel = (leftTeam === "A")
+        ? `${state.names?.A1 || "A1"} & ${state.names?.A2 || "A2"}`
+        : `${state.names?.B1 || "B1"} & ${state.names?.B2 || "B2"}`;
+    
+      const rightLabel = (rightTeam === "A")
+        ? `${state.names?.A1 || "A1"} & ${state.names?.A2 || "A2"}`
+        : `${state.names?.B1 || "B1"} & ${state.names?.B2 || "B2"}`;
+    
+      nameA.textContent = leftLabel;
+      nameB.textContent = rightLabel;
+    }else{
+      nameA.textContent = teamName(leftTeam);
+      nameB.textContent = teamName(rightTeam);
+    }
 
     const pL = displayPointForTeam(leftTeam);
     const pR = displayPointForTeam(rightTeam);
@@ -1374,8 +1390,9 @@ function checkWinTiebreak(){
     setsA.textContent  = String(sL);
     setsB.textContent  = String(sR);
 
-    // tiebreak superscript shown while TB at 6:6
-    if(state.tiebreak && state.games.A===6 && state.games.B===6){
+    // tiebreak superscript shown while TB at trigger score (3:3 or 6:6)
+    const tbTrigger = getTbTrigger();
+    if(state.tiebreak && state.games.A===tbTrigger && state.games.B===tbTrigger){
       tbSupA.textContent = String(state.tbPoints[leftTeam] ?? 0);
       tbSupB.textContent = String(state.tbPoints[rightTeam] ?? 0);
     }else{
@@ -1419,9 +1436,18 @@ function checkWinTiebreak(){
     if(state.winner){
       winnerText.style.display = "block";
       winnerText.textContent = `WINNER: ${state.winner}`;
+    
+      if(_lastMatchResultWinner !== state.winner){
+        _lastMatchResultWinner = state.winner;
+        setTimeout(()=>{ showMatchResultModal(); }, 30);
+        setTimeout(()=>{ autoSaveCompletedMatch(); }, 0);
+      }
     }else{
       winnerText.style.display = "none";
       winnerText.textContent = "";
+      _lastMatchResultWinner = null;
+      _lastAutoSavedMatchKey = null;
+      closeMatchResultModal();
     }
 
     // warn styles
@@ -1475,13 +1501,11 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
-          state.completedAt = state.completedAt || new Date().toISOString();
         }else{
           startNewSet();
         }
 
         saveState(state);
-        if(state.winner) void autoSaveCompletedMatch();
         render(true);
         syncWakeLock();
         return;
@@ -1524,7 +1548,6 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
-          state.completedAt = state.completedAt || new Date().toISOString();
         }else{
           startNewSet();
         }
@@ -1532,7 +1555,6 @@ function checkWinTiebreak(){
     }
 
     saveState(state);
-    if(state.winner) void autoSaveCompletedMatch();
     render();
     syncWakeLock();
   }
@@ -1962,9 +1984,10 @@ function checkWinTiebreak(){
     next.started = true;
 
     next.mode = modeSel.value;
-    next.bestOf = parseInt(bestOfSel.value,10) || 3;
-    next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 6;
+    next.bestOf = parseInt(bestOfSel.value,10) || 1;
+    next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 4;
     next.noAd = !!noAdChk?.checked;
+    next.tiebreakOn = !!tbOnChk?.checked;
 
     if(next.mode==="doubles"){
       next.names.A1=(pA1.value||"").trim()||"A1";
@@ -1994,7 +2017,6 @@ function checkWinTiebreak(){
     saveUndoHistory(undoHistory);
 
     state = next;
-    _lastAutoSavedMatchKey = null;
     saveState(state);
 
     render(true);
@@ -2433,43 +2455,90 @@ function checkWinTiebreak(){
     // setup mode toggle
     modeSel?.addEventListener("change", ()=>{
       const v = modeSel.value;
-      // keep state in sync immediately (rotation/keyboard triggers render)
+    
       state.mode = v;
       saveState(state);
-
-      singlesInputs.style.display = (v==="doubles") ? "none" : "block";
-      doublesInputs.style.display = (v==="doubles") ? "block" : "none";
+    
+      if(singlesInputs) singlesInputs.style.display = (v === "singles") ? "block" : "none";
+      if(doublesInputs) doublesInputs.style.display = (v === "doubles") ? "block" : "none";
+    
       updateFirstServerButtonLabels();
-      // keep selected server button visible
       setFirstServerSingles(firstServerSinglesHidden?.value || "A");
-      // doubles serve picks (green/blue)
-      if(v==="doubles"){
-        // reset pick cycle so next click becomes GREEN
+    
+      if(v === "doubles"){
         try{ doublesPickStage = 0; }catch(_e){}
-        // ensure hidden defaults exist
         if(doublesStartTeamHidden && !doublesStartTeamHidden.value) doublesStartTeamHidden.value = "A";
         if(doublesFirstAHidden && !doublesFirstAHidden.value) doublesFirstAHidden.value = "A1";
         if(doublesFirstBHidden && !doublesFirstBHidden.value) doublesFirstBHidden.value = "B1";
         refreshDoublesServeUI();
       }
+    
+      render(true);
     });
 
     bestOfSel?.addEventListener("change", ()=>{
-      const v = parseInt(bestOfSel.value,10) || 3;
-      state.bestOf = v;
+      const v = parseInt(bestOfSel.value,10) || 1;
+      state.bestOf = ([1,3,5].includes(v) ? v : 1);
       saveState(state);
     });
-
+    
     gamesToWinSel?.addEventListener("change", ()=>{
-    const v = parseInt(gamesToWinSel.value, 10) || 6;
-    state.gamesToWin = ([4,6].includes(v) ? v : 6);
-    saveState(state);
+      const v = parseInt(gamesToWinSel.value, 10) || 4;
+      state.gamesToWin = ([4,6].includes(v) ? v : 4);
+
+      // 게임 수 변경 시 TB 기본값 동기화: 4게임=OFF, 6게임=ON
+      state.tiebreakOn = (state.gamesToWin === 6);
+      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
+
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+
+      // TB OFF로 바뀌면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
+      if(!state.tiebreakOn && state.tiebreak){
+        state.tiebreak = false;
+        state.tbPoints = {A:0, B:0};
+        resetPoints();
+      }
+
+      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
+      if(state.tiebreakOn && !state.tiebreak &&
+         state.games.A===trigger && state.games.B===trigger && noPointStarted){
+        state.tiebreak = true;
+        state.tbPoints = {A:0,B:0};
+      }
+
+      saveState(state);
+      render(true);
     });
     
     noAdChk?.addEventListener("change", ()=>{
       state.noAd = !!noAdChk.checked;
       saveState(state);
-      // if NO-AD changed mid game, keep it applied immediately
+      render(true);
+    });
+    
+    tbOnChk?.addEventListener("change", ()=>{
+      state.tiebreakOn = !!tbOnChk.checked;
+    
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+    
+      // TB OFF로 바꾸면 현재 TB 진행 중인 게임 종료
+      if(!state.tiebreakOn && state.tiebreak){
+        state.tiebreak = false;
+        state.tbPoints = {A:0, B:0};
+        resetPoints();
+      }
+    
+      // TB ON이고 아직 다음 게임 시작 전이면 즉시 TB 게임으로 전환
+      if(state.tiebreakOn && !state.tiebreak &&
+         state.games.A===trigger && state.games.B===trigger &&
+         ((state.points.A|0)+(state.points.B|0)===0)){
+        state.tiebreak = true;
+        state.tbPoints = {A:0,B:0};
+      }
+    
+      saveState(state);
       render(true);
     });
 
@@ -2773,19 +2842,20 @@ function checkWinTiebreak(){
   // 경기운영 설정 토글
   _onTap(document.getElementById('tbBadge'), ()=>{
     try{
-      // Toggle preference: play a tiebreak game at 6:6
       state.tiebreakOn = !state.tiebreakOn;
 
-      // If the user turns TB OFF while a TB game is active, switch back to normal game.
+      const trigger = getTbTrigger();
+      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
+
+      // TB OFF면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
       if(!state.tiebreakOn && state.tiebreak){
         state.tiebreak = false;
         state.tbPoints = {A:0,B:0};
-        // Normal game scoring uses state.points (TB uses tbPoints). Start clean.
         resetPoints();
       }
 
-      // If the user turns TB ON at 6:6 before the next game has started (0-0), start TB immediately.
-      if(state.tiebreakOn && !state.tiebreak && state.games.A===6 && state.games.B===6 && ((state.points.A|0)+(state.points.B|0)===0)){
+      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
+      if(state.tiebreakOn && !state.tiebreak && state.games.A===trigger && state.games.B===trigger && noPointStarted){
         state.tiebreak = true;
         state.tbPoints = {A:0,B:0};
       }
@@ -2833,6 +2903,7 @@ try{
     try{ wireSettingsModal_v2217(); }catch(_e){}
     try{ wireResetChoiceModal_v2217(); }catch(_e){}
     try{ wireTopButtons_v2217(); }catch(_e){}
+    try{ wireMatchResultModal(); }catch(_e){}
 setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 
     // Move point buttons above history (without touching HTML)
@@ -2891,9 +2962,68 @@ async function initSupabase() {
   console.log("✅ Supabase ready");
 }
   // ===========================================
+
+  function getAutoSaveMatchKey(){
+    try{
+      const s = window.__TS_SNAPSHOT?.();
+      const st = s?.state || state || {};
+      const winner = st.winner || "";
+      const setsA = st.sets?.A ?? 0;
+      const setsB = st.sets?.B ?? 0;
+      const gamesA = st.games?.A ?? 0;
+      const gamesB = st.games?.B ?? 0;
+      const cs = Array.isArray(st.completedSets) ? JSON.stringify(st.completedSets) : "[]";
+      return [winner, setsA, setsB, gamesA, gamesB, cs].join("|");
+    }catch(_e){
+      return String(Date.now());
+    }
+  }
+
+  async function autoSaveCompletedMatch(){
+    if(!state?.winner) return false;
+    const key = getAutoSaveMatchKey();
+    if(_lastAutoSavedMatchKey === key) return false;
+
+    // completedAt 메타가 없으면 한 번만 기록
+    try{
+      if(!state.completedAt) state.completedAt = new Date().toISOString();
+      saveState(state);
+    }catch(_e){}
+
+    try{
+      await saveTestRecord({ isCompleted: true, saveReason: "auto_completed" });
+      _lastAutoSavedMatchKey = key;
+      return true;
+    }catch(err){
+      console.error("자동 저장 실패:", err);
+      return false;
+    }
+  }
   
-  async function saveTestRecord() {
-    return saveMatchRecord({ reason: "manual" });
+  async function saveTestRecord(opts = {}) {
+    if (!supabase) await initSupabase();
+  
+    const now = new Date().toISOString();
+  
+    // ✅ 현재 경기 상태 스냅샷 가져오기
+    const snap = window.__TS_SNAPSHOT?.();
+    if (!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
+  
+    // ✅ 템플릿(match/teams/result/log) 저장 금지
+    // ✅ 실제 "현재 상태 전체"를 data.state로 저장
+    const record = {
+      schema_version: "match_v1",
+      saved_at: now,
+      state: snap.state,
+      undoHistory: snap.undoHistory
+    };
+  
+    const { error } = await supabase
+      .from("match_records")
+      .insert({ app_version: "v-current", data: record });
+  
+    if (error) throw error;
+    console.log("✅ insert ok (current state saved)");
   }
 
 async function loadRecentRecords(limit = 10) {
