@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.30');
+    const v = (window.__TS_APP_VERSION || 'v22.24.34');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.30";
+  const APP_VERSION = "v22.24.34";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -589,6 +589,9 @@ function debounce(fn, ms=120){
   function resetScoresOnly(){
     try{
       closeMatchResultModal();
+      _lastMatchResultWinner = null;
+      _completedSaveKey = null;
+      _completedSavePromise = null;
       state.sets = {A:0,B:0};
       state.games = {A:0,B:0};
       resetPoints();
@@ -1386,7 +1389,8 @@ function checkWinTiebreak(){
     
       if(_lastMatchResultWinner !== state.winner){
         _lastMatchResultWinner = state.winner;
-        setTimeout(()=>{ showMatchResultModal(); }, 30);
+        setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 30);
+        Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
       }
     }else{
       winnerText.style.display = "none";
@@ -1446,6 +1450,8 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
+          setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
+          Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
         }else{
           startNewSet();
         }
@@ -1493,6 +1499,8 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
+          setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
+          Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
         }else{
           startNewSet();
         }
@@ -2935,14 +2943,34 @@ function buildRecordPayload(saveReason = 'manual'){
 
 async function saveCurrentRecord(saveReason = 'manual'){
   if (!supabase) await initSupabase();
+
   const record = buildRecordPayload(saveReason);
-
-  const { error } = await supabase
-    .from("match_records")
-    .insert({ app_version: APP_VERSION, data: record });
-
-  if (error) throw error;
-  return record;
+  try{
+    const { error } = await supabase
+      .from("match_records")
+      .insert({ app_version: APP_VERSION, data: record });
+    if (error) throw error;
+    return record;
+  }catch(err){
+    console.error('saveCurrentRecord primary insert failed:', err);
+    // fallback: simplest payload for older table/RLS combinations
+    const snap = window.__TS_SNAPSHOT?.();
+    if(!snap) throw err;
+    const now = new Date().toISOString();
+    const simpleRecord = {
+      schema_version: 'match_v1',
+      saved_at: now,
+      status: state?.winner ? 'completed' : 'in_progress',
+      save_reason: saveReason,
+      state: JSON.parse(JSON.stringify(snap.state || state)),
+      undoHistory: JSON.parse(JSON.stringify(snap.undoHistory || []))
+    };
+    const { error: error2 } = await supabase
+      .from("match_records")
+      .insert({ app_version: APP_VERSION, data: simpleRecord });
+    if (error2) throw error2;
+    return simpleRecord;
+  }
 }
 
 async function ensureCompletedMatchSaved(){
@@ -3119,7 +3147,7 @@ window.addEventListener('load', async ()=>{
           }
         } catch (e) {
           console.error(e);
-          alert('저장 실패 (콘솔 확인)');
+          alert('저장 실패: ' + (e?.message || e));
         } finally {
           saveBtn.disabled = false;
         }
