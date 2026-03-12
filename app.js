@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.34');
+    const v = (window.__TS_APP_VERSION || 'v22.24.29');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.34";
+  const APP_VERSION = "v22.24.29";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -627,7 +627,155 @@ function debounce(fn, ms=120){
       showErr("초기화 오류:", err);
     }
   }
+  
+  let _lastMatchResultWinner = null;
+  let _completedSaveKey = null;
+  let _completedSavePromise = null;
+
+  function getCompletedMatchSaveKey(){
+    try{
+      if(!state || !state.winner) return null;
+      const names = state.names || {};
+      return JSON.stringify({
+        winner: state.winner,
+        mode: state.mode,
+        bestOf: state.bestOf,
+        gamesToWin: state.gamesToWin,
+        sets: state.sets,
+        games: state.games,
+        completedSets: state.completedSets,
+        names: [names.A, names.B, names.A1, names.A2, names.B1, names.B2]
+      });
+    }catch(_e){
+      return String(Date.now());
+    }
+  }
+
+  function buildRecordPayload(saveReason="manual"){
+    const now = new Date().toISOString();
+    const snap = window.__TS_SNAPSHOT?.();
+    if(!snap) throw new Error("__TS_SNAPSHOT이 없습니다");
+
+    const snapState = JSON.parse(JSON.stringify(snap.state || state || {}));
+    const snapUndo  = JSON.parse(JSON.stringify(snap.undoHistory || []));
+    const isCompleted = !!snapState.winner;
+    if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
+
+    return {
+      schema_version: "match_v1",
+      saved_at: now,
+      status: isCompleted ? "completed" : "in_progress",
+      save_reason: saveReason,
+      completed_at: isCompleted ? (snapState.completedAt || now) : null,
+      state: snapState,
+      undoHistory: snapUndo
+    };
+  }
+
+  async function saveCurrentRecord(saveReason="manual"){
+    if (!supabase) await initSupabase();
+    const record = buildRecordPayload(saveReason);
+    const { error } = await supabase
+      .from("match_records")
+      .insert({ app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"), data: record });
+    if (error) throw error;
+    return record;
+  }
+
+  async function ensureCompletedMatchSaved(){
+    if(!state || !state.winner) return null;
+    const key = getCompletedMatchSaveKey();
+    if(!key) return null;
+    if(_completedSaveKey === key && _completedSavePromise) return _completedSavePromise;
+
+    _completedSaveKey = key;
+    _completedSavePromise = (async ()=>{
+      try{
+        return await saveCurrentRecord("auto_completed");
+      }catch(err){
+        _completedSaveKey = null;
+        throw err;
+      }finally{
+        _completedSavePromise = null;
+      }
+    })();
+    return _completedSavePromise;
+  }
+
+  function showMatchResultModal(){
+    try{
+      const modal = document.getElementById("matchResultModal");
+      const textEl = document.getElementById("matchResultWinText");
+      if(!modal || !textEl || !state?.winner) return;
+
+      textEl.textContent = `${state.winner} 승리!`;
+      modal.style.display = "block";
+      modal.setAttribute("aria-hidden", "false");
+    }catch(err){
+      showErr("결과 모달 표시 오류:", err);
+    }
+  }
+
+  function closeMatchResultModal(){
+    const modal = document.getElementById("matchResultModal");
+    if(modal){
+      modal.style.display = "none";
+      modal.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  async function regameFromMatchResult(){
+    try{
+      await ensureCompletedMatchSaved();
+      closeMatchResultModal();
+      resetScoresOnly();
+      state.started = true;
+      state.winner = null;
+      saveState(state);
+      render(true);
+      try{ document.querySelector(".wrap")?.scrollTo({top:0, left:0, behavior:"auto"}); }catch(_e){}
+    }catch(err){
+      showErr("REGAME 처리 오류:", err);
+    }
+  }
+
+  async function goSetupFromMatchResult(){
+    try{
+      await ensureCompletedMatchSaved();
+      closeMatchResultModal();
+      resetFullToSetup();
+    }catch(err){
+      showErr("설정창 이동 오류:", err);
+    }
+  }
+
+  function wireMatchResultModal(){
+    const backdrop = document.getElementById("matchResultBackdrop");
+    const regameBtn = document.getElementById("regameBtn");
+    const setupBtn = document.getElementById("goSetupAfterMatchBtn");
+
+    if(backdrop && !backdrop.__matchResultWired){
+      backdrop.__matchResultWired = true;
+      backdrop.addEventListener("click", (e)=>{ e.preventDefault(); e.stopPropagation(); });
+    }
+    if(regameBtn && !regameBtn.__matchResultWired){
+      regameBtn.__matchResultWired = true;
+      regameBtn.addEventListener("click", async (e)=>{
+        e.preventDefault(); e.stopPropagation();
+        await regameFromMatchResult();
+      });
+    }
+    if(setupBtn && !setupBtn.__matchResultWired){
+      setupBtn.__matchResultWired = true;
+      setupBtn.addEventListener("click", async (e)=>{
+        e.preventDefault(); e.stopPropagation();
+        await goSetupFromMatchResult();
+      });
+    }
+  }
+
 function wireResetChoiceModal(){
+
     onTap(document.getElementById('resetChoiceCloseBtn'), closeResetChoice);
     onTap(document.getElementById('resetChoiceBackdrop'), closeResetChoice);
 
@@ -650,10 +798,10 @@ function wireResetChoiceModal(){
       mode:"doubles",
       bestOf:1,
       gamesToWin:4,
-      noAd:true,
+      noAd:false,
   
       // preference: whether to play a tiebreak game at 3:3 or 6:6
-      tiebreakOn:false,
+      tiebreakOn:true,
 
       names:{ A:"Player A", B:"Player B", A1:"A1", A2:"A2", B1:"B1", B2:"B2" },
 
@@ -703,7 +851,6 @@ function wireResetChoiceModal(){
 
     // preference: play tiebreak at 6:6
     if(typeof pick("tiebreakOn")==="boolean") s.tiebreakOn = pick("tiebreakOn");
-    else s.tiebreakOn = (s.gamesToWin === 6);
 
     if(typeof pick("tiebreak")==="boolean") s.tiebreak = pick("tiebreak");
     if(pick("tbPoints") && typeof pick("tbPoints")==="object") s.tbPoints = {A: +pick("tbPoints").A||0, B:+pick("tbPoints").B||0};
@@ -1340,9 +1487,8 @@ function checkWinTiebreak(){
     setsA.textContent  = String(sL);
     setsB.textContent  = String(sR);
 
-    // tiebreak superscript shown while TB at trigger score (3:3 or 6:6)
-    const tbTrigger = getTbTrigger();
-    if(state.tiebreak && state.games.A===tbTrigger && state.games.B===tbTrigger){
+    // tiebreak superscript shown while TB at 6:6
+    if(state.tiebreak && state.games.A===6 && state.games.B===6){
       tbSupA.textContent = String(state.tbPoints[leftTeam] ?? 0);
       tbSupB.textContent = String(state.tbPoints[rightTeam] ?? 0);
     }else{
@@ -1386,12 +1532,15 @@ function checkWinTiebreak(){
     if(state.winner){
       winnerText.style.display = "block";
       winnerText.textContent = `WINNER: ${state.winner}`;
-    
+
       if(_lastMatchResultWinner !== state.winner){
         _lastMatchResultWinner = state.winner;
-        setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 30);
-        Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
       }
+      const modalEl = document.getElementById("matchResultModal");
+      if(modalEl && modalEl.style.display !== "block"){
+        setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
+      }
+      Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error("auto save failed:", err));
     }else{
       winnerText.style.display = "none";
       winnerText.textContent = "";
@@ -1450,8 +1599,6 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
-          setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
-          Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
         }else{
           startNewSet();
         }
@@ -1499,8 +1646,6 @@ function checkWinTiebreak(){
         const mW = checkWinMatch();
         if(mW){
           state.winner = teamName(mW);
-          setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
-          Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error('auto save failed:', err));
         }else{
           startNewSet();
         }
@@ -2438,28 +2583,14 @@ function checkWinTiebreak(){
     gamesToWinSel?.addEventListener("change", ()=>{
       const v = parseInt(gamesToWinSel.value, 10) || 4;
       state.gamesToWin = ([4,6].includes(v) ? v : 4);
-
-      // 게임 수 변경 시 TB 기본값 동기화: 4게임=OFF, 6게임=ON
-      state.tiebreakOn = (state.gamesToWin === 6);
-      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
-
-      const trigger = getTbTrigger();
-      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
-
-      // TB OFF로 바뀌면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
+    
+      // 현재 점수가 TB 진입 조건인데 TB OFF면 일반 게임 유지
       if(!state.tiebreakOn && state.tiebreak){
         state.tiebreak = false;
         state.tbPoints = {A:0, B:0};
         resetPoints();
       }
-
-      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
-      if(state.tiebreakOn && !state.tiebreak &&
-         state.games.A===trigger && state.games.B===trigger && noPointStarted){
-        state.tiebreak = true;
-        state.tbPoints = {A:0,B:0};
-      }
-
+    
       saveState(state);
       render(true);
     });
@@ -2795,20 +2926,19 @@ function checkWinTiebreak(){
   // 경기운영 설정 토글
   _onTap(document.getElementById('tbBadge'), ()=>{
     try{
+      // Toggle preference: play a tiebreak game at 6:6
       state.tiebreakOn = !state.tiebreakOn;
 
-      const trigger = getTbTrigger();
-      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
-
-      // TB OFF면 현재 TB 진행 중인 게임을 일반 게임으로 되돌림
+      // If the user turns TB OFF while a TB game is active, switch back to normal game.
       if(!state.tiebreakOn && state.tiebreak){
         state.tiebreak = false;
         state.tbPoints = {A:0,B:0};
+        // Normal game scoring uses state.points (TB uses tbPoints). Start clean.
         resetPoints();
       }
 
-      // TB ON이고 마지막 게임 시작 전(0:0)이면 즉시 TB 진입
-      if(state.tiebreakOn && !state.tiebreak && state.games.A===trigger && state.games.B===trigger && noPointStarted){
+      // If the user turns TB ON at 6:6 before the next game has started (0-0), start TB immediately.
+      if(state.tiebreakOn && !state.tiebreak && state.games.A===6 && state.games.B===6 && ((state.points.A|0)+(state.points.B|0)===0)){
         state.tiebreak = true;
         state.tbPoints = {A:0,B:0};
       }
@@ -2896,189 +3026,6 @@ setTimeout(()=>{ try{ updateFirstServerButtonLabels(); }catch(_e){} }, 50);
 })()
 })();
 
-
-let _lastMatchResultWinner = null;
-let _completedSaveKey = null;
-let _completedSavePromise = null;
-
-function getCompletedMatchSaveKey(){
-  if(!state || !state.winner) return null;
-  const names = state.names || {};
-  const nameKey = [names.A, names.B, names.A1, names.A2, names.B1, names.B2].join('|');
-  return JSON.stringify({
-    winner: state.winner,
-    mode: state.mode,
-    bestOf: state.bestOf,
-    gamesToWin: state.gamesToWin,
-    noAd: !!state.noAd,
-    tiebreakOn: !!state.tiebreakOn,
-    sets: state.sets,
-    games: state.games,
-    completedSets: state.completedSets,
-    nameKey
-  });
-}
-
-function buildRecordPayload(saveReason = 'manual'){
-  const snap = window.__TS_SNAPSHOT?.();
-  if(!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
-
-  const now = new Date().toISOString();
-  const snapState = JSON.parse(JSON.stringify(snap.state || state));
-  const snapUndo = JSON.parse(JSON.stringify(snap.undoHistory || []));
-
-  const isCompleted = !!snapState.winner;
-  if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
-
-  return {
-    schema_version: "match_v1",
-    saved_at: now,
-    status: isCompleted ? "completed" : "in_progress",
-    save_reason: saveReason,
-    completed_at: isCompleted ? (snapState.completedAt || now) : null,
-    state: snapState,
-    undoHistory: snapUndo
-  };
-}
-
-async function saveCurrentRecord(saveReason = 'manual'){
-  if (!supabase) await initSupabase();
-
-  const record = buildRecordPayload(saveReason);
-  try{
-    const { error } = await supabase
-      .from("match_records")
-      .insert({ app_version: APP_VERSION, data: record });
-    if (error) throw error;
-    return record;
-  }catch(err){
-    console.error('saveCurrentRecord primary insert failed:', err);
-    // fallback: simplest payload for older table/RLS combinations
-    const snap = window.__TS_SNAPSHOT?.();
-    if(!snap) throw err;
-    const now = new Date().toISOString();
-    const simpleRecord = {
-      schema_version: 'match_v1',
-      saved_at: now,
-      status: state?.winner ? 'completed' : 'in_progress',
-      save_reason: saveReason,
-      state: JSON.parse(JSON.stringify(snap.state || state)),
-      undoHistory: JSON.parse(JSON.stringify(snap.undoHistory || []))
-    };
-    const { error: error2 } = await supabase
-      .from("match_records")
-      .insert({ app_version: APP_VERSION, data: simpleRecord });
-    if (error2) throw error2;
-    return simpleRecord;
-  }
-}
-
-async function ensureCompletedMatchSaved(){
-  if(!state || !state.winner) return null;
-
-  const key = getCompletedMatchSaveKey();
-  if(!key) return null;
-
-  if(_completedSaveKey === key){
-    return _completedSavePromise || key;
-  }
-
-  _completedSaveKey = key;
-  _completedSavePromise = (async ()=>{
-    try{
-      return await saveCurrentRecord('auto_completed');
-    }catch(err){
-      _completedSaveKey = null;
-      throw err;
-    }finally{
-      _completedSavePromise = null;
-    }
-  })();
-
-  return _completedSavePromise;
-}
-
-function showMatchResultModal(){
-  try{
-    const modal = document.getElementById('matchResultModal');
-    const textEl = document.getElementById('matchResultWinText');
-    if(!modal || !textEl || !state.winner) return;
-
-    textEl.textContent = `${state.winner} 승리!`;
-    modal.style.display = 'block';
-  }catch(err){
-    showErr("결과 모달 표시 오류:", err);
-  }
-}
-
-function closeMatchResultModal(){
-  const modal = document.getElementById('matchResultModal');
-  if(modal) modal.style.display = 'none';
-}
-
-async function regameFromMatchResult(){
-  try{
-    await ensureCompletedMatchSaved();
-
-    closeMatchResultModal();
-    resetScoresOnly();
-    state.started = true;
-    state.winner = null;
-    saveState(state);
-    render(true);
-
-    try{
-      document.querySelector(".wrap")?.scrollTo({ top:0, left:0, behavior:"auto" });
-    }catch(_e){}
-  }catch(err){
-    showErr("REGAME 처리 오류:", err);
-  }
-}
-
-async function goSetupFromMatchResult(){
-  try{
-    await ensureCompletedMatchSaved();
-
-    closeMatchResultModal();
-    resetFullToSetup();
-  }catch(err){
-    showErr("설정창 이동 오류:", err);
-  }
-}
-
-function wireMatchResultModal(){
-  const backdrop = document.getElementById('matchResultBackdrop');
-  const regameBtn = document.getElementById('regameBtn');
-  const setupBtn = document.getElementById('goSetupAfterMatchBtn');
-
-  if(backdrop && !backdrop.__wiredMatchResult){
-    backdrop.__wiredMatchResult = true;
-    backdrop.addEventListener('click', (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-    });
-  }
-
-  if(regameBtn && !regameBtn.__wiredMatchResult){
-    regameBtn.__wiredMatchResult = true;
-    regameBtn.addEventListener('click', async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      await regameFromMatchResult();
-    });
-  }
-
-  if(setupBtn && !setupBtn.__wiredMatchResult){
-    setupBtn.__wiredMatchResult = true;
-    setupBtn.addEventListener('click', async (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      await goSetupFromMatchResult();
-    });
-  }
-}
-
-
 // ===== Supabase init (from /api/config) =====
 
 async function initSupabase() {
@@ -3100,7 +3047,7 @@ async function initSupabase() {
   // ===========================================
   
   async function saveTestRecord() {
-    return await saveCurrentRecord('manual');
+    return await saveCurrentRecord("manual");
   }
 
 async function loadRecentRecords(limit = 10) {
