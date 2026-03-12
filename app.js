@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.31');
+    const v = (window.__TS_APP_VERSION || 'v22.24.32');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.31";
+  const APP_VERSION = "v22.24.32";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -623,6 +623,7 @@ function debounce(fn, ms=120){
   }
   let _lastMatchResultWinner = null;
   let _lastAutoSavedMatchKey = null;
+  let _pendingAutoSavePromise = null;
   
   function showMatchResultModal(){
     try{
@@ -642,9 +643,11 @@ function debounce(fn, ms=120){
     if(modal) modal.style.display = 'none';
   }
   
-  function regameFromMatchResult(){
+  async function regameFromMatchResult(){
     try{
+      await autoSaveCompletedMatch();
       closeMatchResultModal();
+      _pendingAutoSavePromise = null;
       _lastAutoSavedMatchKey = null;
       resetScoresOnly();   // started 상태 유지, 보드 화면 유지
       state.started = true;
@@ -657,9 +660,11 @@ function debounce(fn, ms=120){
     }
   }
   
-  function goSetupFromMatchResult(){
+  async function goSetupFromMatchResult(){
     try{
+      await autoSaveCompletedMatch();
       closeMatchResultModal();
+      _pendingAutoSavePromise = null;
       _lastAutoSavedMatchKey = null;
       resetFullToSetup();  // 설정화면으로 이동 + 전체 초기화
     }catch(err){
@@ -673,8 +678,8 @@ function debounce(fn, ms=120){
     const setupBtn = document.getElementById('goSetupAfterMatchBtn');
   
     _onTap(backdrop, ()=>{}); // 바깥 탭으로 닫히지 않게 막음
-    _onTap(regameBtn, ()=>{ regameFromMatchResult(); });
-    _onTap(setupBtn, ()=>{ goSetupFromMatchResult(); });
+    _onTap(regameBtn, async ()=>{ await regameFromMatchResult(); });
+    _onTap(setupBtn, async ()=>{ await goSetupFromMatchResult(); });
   }
     
 function wireResetChoiceModal(){
@@ -2982,22 +2987,29 @@ async function initSupabase() {
   async function autoSaveCompletedMatch(){
     if(!state?.winner) return false;
     const key = getAutoSaveMatchKey();
-    if(_lastAutoSavedMatchKey === key) return false;
+    if(_lastAutoSavedMatchKey === key) return true;
+    if(_pendingAutoSavePromise) return _pendingAutoSavePromise;
 
-    // completedAt 메타가 없으면 한 번만 기록
-    try{
-      if(!state.completedAt) state.completedAt = new Date().toISOString();
-      saveState(state);
-    }catch(_e){}
+    _pendingAutoSavePromise = (async ()=>{
+      // completedAt 메타가 없으면 한 번만 기록
+      try{
+        if(!state.completedAt) state.completedAt = new Date().toISOString();
+        saveState(state);
+      }catch(_e){}
 
-    try{
-      await saveTestRecord({ isCompleted: true, saveReason: "auto_completed" });
-      _lastAutoSavedMatchKey = key;
-      return true;
-    }catch(err){
-      console.error("자동 저장 실패:", err);
-      return false;
-    }
+      try{
+        await saveTestRecord({ isCompleted: true, saveReason: "auto_completed" });
+        _lastAutoSavedMatchKey = key;
+        return true;
+      }catch(err){
+        console.error("자동 저장 실패:", err);
+        return false;
+      }finally{
+        _pendingAutoSavePromise = null;
+      }
+    })();
+
+    return _pendingAutoSavePromise;
   }
   
   async function saveTestRecord(opts = {}) {
@@ -3008,22 +3020,30 @@ async function initSupabase() {
     // ✅ 현재 경기 상태 스냅샷 가져오기
     const snap = window.__TS_SNAPSHOT?.();
     if (!snap) throw new Error('__TS_SNAPSHOT이 없습니다');
+
+    const isCompleted = !!opts.isCompleted;
+    const saveReason = opts.saveReason || (isCompleted ? "auto_completed" : "manual_save");
+    if (isCompleted && !snap.state.completedAt) {
+      snap.state.completedAt = now;
+    }
   
-    // ✅ 템플릿(match/teams/result/log) 저장 금지
     // ✅ 실제 "현재 상태 전체"를 data.state로 저장
     const record = {
       schema_version: "match_v1",
       saved_at: now,
+      completed_at: isCompleted ? (snap.state.completedAt || now) : null,
+      status: isCompleted ? "completed" : "in_progress",
+      save_reason: saveReason,
       state: snap.state,
       undoHistory: snap.undoHistory
     };
   
     const { error } = await supabase
       .from("match_records")
-      .insert({ app_version: "v-current", data: record });
+      .insert({ app_version: APP_VERSION, data: record });
   
     if (error) throw error;
-    console.log("✅ insert ok (current state saved)");
+    console.log("✅ insert ok (current state saved)", record.status, record.save_reason);
   }
 
 async function loadRecentRecords(limit = 10) {
