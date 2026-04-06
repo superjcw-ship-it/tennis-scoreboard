@@ -641,6 +641,58 @@
       width: 100%;
       justify-content: center;
     }
+    .resultPhotoBox{
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+    }
+    .resultPhotoTop{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:8px;
+    }
+    .resultPhotoLabel{
+      font-size: 13px;
+      font-weight: 900;
+      color: var(--text);
+    }
+    .resultPhotoHint{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .resultPhotoActions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+    .resultPhotoPreviewWrap{
+      display:none;
+      margin-top:10px;
+    }
+    .resultPhotoPreviewWrap.hasPhoto{
+      display:block;
+    }
+    .resultPhotoPreview{
+      width:100%;
+      max-height:220px;
+      object-fit:cover;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background:#0f0f12;
+    }
+    .resultPhotoMeta{
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+      word-break:break-all;
+    }
     
     @media (max-width: 520px){
       .resultWinText{
@@ -1351,8 +1403,26 @@
             </div>
             <div class="modalBody">
               <div id="matchResultWinText" class="resultWinText">A1 &amp; A2 승리!</div>
-              <div class="resultSubText">다음 동작을 선택하세요.</div>
-        
+              <div class="resultSubText">사진은 선택사항입니다. 촬영하면 경기 기록과 함께 저장됩니다.</div>
+
+              <div class="resultPhotoBox">
+                <div class="resultPhotoTop">
+                  <div>
+                    <div class="resultPhotoLabel">완료 사진</div>
+                    <div class="resultPhotoHint">코트/점수판/선수 사진 등을 선택해서 기록에 함께 남길 수 있습니다.</div>
+                  </div>
+                </div>
+                <input id="matchResultPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;" />
+                <div class="resultPhotoActions">
+                  <button id="takeMatchResultPhotoBtn" class="btn" type="button">사진 촬영/선택</button>
+                  <button id="removeMatchResultPhotoBtn" class="btn" type="button" style="display:none;">사진 제거</button>
+                </div>
+                <div id="matchResultPhotoPreviewWrap" class="resultPhotoPreviewWrap">
+                  <img id="matchResultPhotoPreview" class="resultPhotoPreview" alt="경기 완료 사진 미리보기" />
+                  <div id="matchResultPhotoMeta" class="resultPhotoMeta"></div>
+                </div>
+              </div>
+
               <div class="resultBtnRow">
                 <button id="regameBtn" class="btn btnPrimary" type="button">REGAME</button>
                 <button id="goSetupAfterMatchBtn" class="btn" type="button">설정창</button>
@@ -1367,7 +1437,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.36</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.37</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1474,14 +1544,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.36"></script>
+  <script src="app.js?v=v22.24.37"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.36").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.37").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.36</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.37</div>
 
 </body>
 </html>
