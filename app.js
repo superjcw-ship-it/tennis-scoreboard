@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.53');
+    const v = (window.__TS_APP_VERSION || 'v22.24.54');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.53";
+  const APP_VERSION = "v22.24.54";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -3549,34 +3549,85 @@ async function loadRecentRecords(limit = 10) {
 
   if (error) throw error;
 
+  const localParse = (value)=>{
+    if (value == null) return null;
+    if (typeof value === 'object') return value;
+    if (typeof value !== 'string') return null;
+    try { return JSON.parse(value); } catch(_e) { return null; }
+  };
+  const normalizePhoto = (candidate)=>{
+    if (!candidate) return null;
+    const parsed = localParse(candidate) || candidate;
+    if (parsed && typeof parsed === 'object' && typeof parsed.dataUrl === 'string' && parsed.dataUrl) {
+      return parsed;
+    }
+    return null;
+  };
+  const extractPhoto = (row)=>{
+    const parsedRow = localParse(row?.data) || row?.data || {};
+    const d = parsedRow || {};
+    const s = d.state || {};
+    return normalizePhoto(d?.media?.completionPhoto)
+      || normalizePhoto(s?.media?.completionPhoto)
+      || normalizePhoto(d?.completionPhoto)
+      || normalizePhoto(row?.media?.completionPhoto)
+      || null;
+  };
+  const getKey = (row)=>{
+    const parsedRow = localParse(row?.data) || row?.data || {};
+    const d = parsedRow || {};
+    const s = d.state || {};
+    const names = s.names || {};
+    const mode = s.mode || d?.match?.mode || 'unknown';
+    const nameKey = mode === 'doubles'
+      ? `${names.A1||'A1'}|${names.A2||'A2'}|${names.B1||'B1'}|${names.B2||'B2'}`
+      : `${names.A||'A'}|${names.B||'B'}`;
+    const sets = `${s?.sets?.A ?? '-'}-${s?.sets?.B ?? '-'}`;
+    const games = `${s?.games?.A ?? '-'}-${s?.games?.B ?? '-'}`;
+    const winner = s?.winner || 'nowinner';
+    return d?.matchKey || `${mode}|${nameKey}|${sets}|${games}|${winner}`;
+  };
+  const mergeRows = (baseRow, sourceRow)=>{
+    const baseData = localParse(baseRow?.data) || baseRow?.data || {};
+    const sourceData = localParse(sourceRow?.data) || sourceRow?.data || {};
+    const photo = extractPhoto(sourceRow) || extractPhoto(baseRow);
+    const mergedData = Object.assign({}, baseData);
+    mergedData.media = Object.assign({}, mergedData.media || {}, sourceData.media || {});
+    mergedData.state = Object.assign({}, mergedData.state || {}, sourceData.state || {});
+    mergedData.state.media = Object.assign({}, mergedData.state?.media || {}, sourceData.state?.media || {});
+    if (photo) {
+      mergedData.media = Object.assign({}, mergedData.media || {}, { completionPhoto: photo });
+      mergedData.state = Object.assign({}, mergedData.state || {});
+      mergedData.state.media = Object.assign({}, mergedData.state.media || {}, { completionPhoto: photo });
+    }
+    return Object.assign({}, baseRow, sourceRow, { data: mergedData });
+  };
+
   const rows = Array.isArray(data)
     ? data.map((row)=>{
-        const parsed = safeParseObject(row?.data) || row?.data || {};
+        const parsed = localParse(row?.data) || row?.data || {};
         return Object.assign({}, row, { data: parsed });
       })
     : [];
 
   const grouped = new Map();
-  for(const row of rows){
-    const key = getRowMatchKey(row) || `id:${row?.id || Math.random()}`;
+  for (const row of rows) {
+    const key = getKey(row) || `id:${row?.id || Math.random()}`;
     const existing = grouped.get(key);
-    if(!existing){
+    if (!existing) {
       grouped.set(key, row);
       continue;
     }
 
-    const existingPhoto = getSavedCompletionPhotoFromRow(existing);
-    const incomingPhoto = getSavedCompletionPhotoFromRow(row);
-
-    if(existingPhoto && !incomingPhoto){
+    const existingPhoto = extractPhoto(existing);
+    const incomingPhoto = extractPhoto(row);
+    if (existingPhoto && !incomingPhoto) continue;
+    if (!existingPhoto && incomingPhoto) {
+      grouped.set(key, mergeRows(existing, row));
       continue;
     }
-    if(!existingPhoto && incomingPhoto){
-      grouped.set(key, mergeCompletionPhotoIntoRow(existing, row));
-      continue;
-    }
-    if(existingPhoto && incomingPhoto){
-      grouped.set(key, mergeCompletionPhotoIntoRow(existing, row));
+    if (existingPhoto && incomingPhoto) {
+      grouped.set(key, mergeRows(existing, row));
       continue;
     }
   }
