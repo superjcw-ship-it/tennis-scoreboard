@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.50');
+    const v = (window.__TS_APP_VERSION || 'v22.24.51');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.50";
+  const APP_VERSION = "v22.24.51";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -2620,12 +2620,12 @@ function checkWinTiebreak(){
       : ``;
     const photoHtml = completionPhoto?.dataUrl
       ? `
-        <div style="margin:10px 0 12px;">
+        <div style="margin:8px auto 14px; max-width:min(100%, 420px); text-align:center;">
           <div style="font-weight:800; margin-bottom:8px;">완료 사진</div>
           <button id="cloudSummaryPhotoBtn" type="button" style="display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer;">
-            <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:260px; object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
+            <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:min(42vh, 300px); object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
           </button>
-          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center;">
             <button id="cloudSummaryPhotoViewBtn" type="button" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(245,158,11,.22); color:#fff5de; padding:8px 10px; cursor:pointer;">사진 보기</button>
             ${photoShareBtnHtml}
             <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(59,130,246,.22); color:#eaf3ff; padding:8px 10px; text-decoration:none;">다운로드</a>
@@ -2676,18 +2676,21 @@ function checkWinTiebreak(){
     body.style.cssText = `padding: 12px 14px; overflow:auto; max-height: calc(80vh - 48px);`;
   
     body.innerHTML = `
-      <div style="font-size:16px; font-weight:800; margin-bottom:8px;">
+      <div style="font-size:16px; font-weight:800; margin-bottom:8px; text-align:center;">
         ${leftName}  vs  ${rightName}
       </div>
-  
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-        <span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px;">완료</span>
+
+      <div style="display:flex; justify-content:center; margin-bottom:8px;">
+        <span style="padding:3px 10px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px; font-weight:800;">완료</span>
+      </div>
+
+      ${photoHtml}
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:0 0 12px;">
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">NO-AD ${noAd}</span>
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">TB ${tbOn}</span>
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
       </div>
-  
-      ${photoHtml}
 
       <div style="line-height:1.6; color: rgba(255,255,255,.88);">
         <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
@@ -2699,7 +2702,7 @@ function checkWinTiebreak(){
           row 생성시간: ${created}
         </div>
       </div>
-  
+
       <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
         <button id="cloudSummaryCopyBtn" style="
           border-radius:10px; border:1px solid rgba(255,255,255,.12);
