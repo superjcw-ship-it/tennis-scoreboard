@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.45');
+    const v = (window.__TS_APP_VERSION || 'v22.24.46');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.45";
+  const APP_VERSION = "v22.24.46";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -622,6 +622,9 @@ function debounce(fn, ms=120){
       _lastMatchResultWinner = null;
       _completedSaveKey = null;
       _completedSavePromise = null;
+      _completedSavedKey = null;
+      _completedSavedRowId = null;
+      clearCompletionPhotoCache();
       state = defaultState();
       undoHistory = [];
       saveUndoHistory(undoHistory);
@@ -640,13 +643,44 @@ function debounce(fn, ms=120){
   let _completedSavedKey = null;
   let _completedSavedRowId = null;
   let _pendingCompletionPhoto = null;
+  const COMPLETION_PHOTO_CACHE_KEY = "tennis_completion_photo_cache_v1";
 
   function getPendingCompletionPhoto(){
     return _pendingCompletionPhoto ? JSON.parse(JSON.stringify(_pendingCompletionPhoto)) : null;
   }
 
+  function getCompletionPhotoCache(){
+    try{
+      const raw = localStorage.getItem(COMPLETION_PHOTO_CACHE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(_e){
+      return null;
+    }
+  }
+
+  function setCompletionPhotoCache(patch={}){
+    try{
+      const base = getCompletionPhotoCache() || {};
+      const next = Object.assign({}, base, patch);
+      if(!next.photo && !next.rowId && !next.matchKey){
+        localStorage.removeItem(COMPLETION_PHOTO_CACHE_KEY);
+        return null;
+      }
+      localStorage.setItem(COMPLETION_PHOTO_CACHE_KEY, JSON.stringify(next));
+      return next;
+    }catch(_e){
+      return null;
+    }
+  }
+
+  function clearCompletionPhotoCache(){
+    try{ localStorage.removeItem(COMPLETION_PHOTO_CACHE_KEY); }catch(_e){}
+  }
+
   function clearPendingCompletionPhoto(){
     _pendingCompletionPhoto = null;
+    clearCompletionPhotoCache();
     try{
       const input = document.getElementById("matchResultPhotoInput");
       if(input) input.value = "";
@@ -656,6 +690,17 @@ function debounce(fn, ms=120){
 
   function setPendingCompletionPhoto(photo){
     _pendingCompletionPhoto = photo ? JSON.parse(JSON.stringify(photo)) : null;
+    if(_pendingCompletionPhoto){
+      setCompletionPhotoCache({
+        photo: _pendingCompletionPhoto,
+        rowId: _completedSavedRowId || null,
+        matchKey: getCompletedMatchSaveKey() || null,
+        synced: false,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      clearCompletionPhotoCache();
+    }
     updateMatchResultPhotoUI();
   }
 
@@ -868,7 +913,56 @@ function debounce(fn, ms=120){
     return data || null;
   }
 
+  function buildPhotoMergedRecord(baseRecord){
+    const base = _maybeParseJson(baseRecord) || {};
+    const record = (base && typeof base === 'object') ? JSON.parse(JSON.stringify(base)) : {};
+    const photo = getPendingCompletionPhoto() || getCompletionPhotoCache()?.photo || null;
+    if(!photo?.dataUrl) return record;
+    if(!record.media || typeof record.media !== 'object') record.media = {};
+    record.media.completionPhoto = JSON.parse(JSON.stringify(photo));
+    if(!record.state || typeof record.state !== 'object'){
+      const snap = window.__TS_SNAPSHOT?.();
+      record.state = JSON.parse(JSON.stringify(snap?.state || state || {}));
+    }
+    if(!record.state.media || typeof record.state.media !== 'object') record.state.media = {};
+    record.state.media.completionPhoto = JSON.parse(JSON.stringify(photo));
+    if(!record.status) record.status = record.state?.winner ? 'completed' : 'completed';
+    if(!record.save_reason) record.save_reason = 'completed_photo_update';
+    record.saved_at = new Date().toISOString();
+    return record;
+  }
+
+  async function repairCompletionPhotoForRow(row){
+    try{
+      const cache = getCompletionPhotoCache();
+      if(!row?.id || !cache?.photo?.dataUrl) return row;
+      if(cache.rowId && String(cache.rowId) !== String(row.id)) return row;
+      const existing = getSavedCompletionPhotoFromRow(row);
+      if(existing?.dataUrl) return row;
+      const latest = await loadRecordById(row.id).catch(()=> row);
+      if(getSavedCompletionPhotoFromRow(latest)?.dataUrl) return latest;
+      if (!supabase) await initSupabase();
+      const merged = buildPhotoMergedRecord((_maybeParseJson(latest?.data) || latest?.data || latest));
+      const { data, error } = await supabase
+        .from('match_records')
+        .update({ app_version: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'v-current'), data: merged })
+        .eq('id', row.id)
+        .select('id, created_at, app_version, data');
+      if(error) throw error;
+      const updated = pickSingleRow(data) || row;
+      setCompletionPhotoCache({ synced: true, rowId: row.id, updatedAt: new Date().toISOString() });
+      return updated;
+    }catch(err){
+      console.warn('repairCompletionPhotoForRow failed', err);
+      return row;
+    }
+  }
+
   async function persistCompletionPhotoToSavedRecord(){
+    const cachePhoto = getCompletionPhotoCache()?.photo || null;
+    if(!_pendingCompletionPhoto && cachePhoto?.dataUrl){
+      _pendingCompletionPhoto = JSON.parse(JSON.stringify(cachePhoto));
+    }
     if(!_pendingCompletionPhoto) return null;
     if(!_completedSavedRowId){
       await ensureCompletedMatchSaved();
@@ -876,19 +970,29 @@ function debounce(fn, ms=120){
     if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
-    const record = buildRecordPayload("completed_photo_update");
+    const latestRow = await loadRecordById(_completedSavedRowId).catch(()=>null);
+    const latestRecord = _maybeParseJson(latestRow?.data) || null;
+    const mergedRecord = buildPhotoMergedRecord(latestRecord || buildRecordPayload('completed_photo_update'));
+
     const { data, error } = await supabase
       .from("match_records")
       .update({
         app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
-        data: record
+        data: mergedRecord
       })
       .eq("id", _completedSavedRowId)
-      .select("id, data");
+      .select("id, created_at, app_version, data");
 
     if(error) throw error;
-    const row = pickSingleRow(data);
+    const row = pickSingleRow(data) || latestRow || null;
     if(row?.id) _completedSavedRowId = row.id;
+    setCompletionPhotoCache({
+      photo: getPendingCompletionPhoto(),
+      rowId: _completedSavedRowId || null,
+      matchKey: getCompletedMatchSaveKey() || null,
+      synced: true,
+      updatedAt: new Date().toISOString()
+    });
     return row;
   }
 
@@ -996,6 +1100,7 @@ function debounce(fn, ms=120){
         const result = await saveCurrentRecord("auto_completed");
         _completedSavedKey = key;
         _completedSavedRowId = result?.rowId || _completedSavedRowId;
+        setCompletionPhotoCache({ rowId: _completedSavedRowId || null, matchKey: key, updatedAt: new Date().toISOString() });
         return result;
       }catch(err){
         _completedSaveKey = null;
@@ -2671,8 +2776,18 @@ function checkWinTiebreak(){
           summaryRow = latestRow;
           completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
         }
+        if(!completionPhoto?.dataUrl){
+          summaryRow = await repairCompletionPhotoForRow(summaryRow);
+          completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
+        }
       }catch(err){
         console.warn('summary latest fetch failed', err);
+      }
+    }
+    if(!completionPhoto?.dataUrl){
+      const cache = getCompletionPhotoCache();
+      if(cache?.photo?.dataUrl && (!summaryRow?.id || !cache.rowId || String(cache.rowId) === String(summaryRow.id))){
+        completionPhoto = cache.photo;
       }
     }
 
@@ -2904,10 +3019,10 @@ function checkWinTiebreak(){
 
       return `
         <tr>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.set}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.game}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); font-weight:700; text-align:center;">${scoreText}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:12px; text-align:left;">${note}</td>
+          <td style="padding:6px 4px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.set}</td>
+          <td style="padding:6px 4px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.game}</td>
+          <td style="padding:6px 4px; border-top:1px solid rgba(255,255,255,.08); font-weight:700; text-align:center;">${scoreText}</td>
+          <td style="padding:6px 4px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:11px; text-align:left;">${note}</td>
         </tr>
       `;
     }).join('');
@@ -2918,19 +3033,19 @@ function checkWinTiebreak(){
           게임 기록 보기 (40:30 포함)
         </summary>
         <div style="margin-top:10px; overflow:auto; max-height:260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; min-width:320px; border-collapse:collapse; table-layout:fixed; font-size:12px;">
+          <table style="width:100%; min-width:280px; border-collapse:collapse; table-layout:fixed; font-size:11.5px;">
             <colgroup>
-              <col style="width:42px;" />
-              <col style="width:42px;" />
-              <col style="width:78px;" />
+              <col style="width:34px;" />
+              <col style="width:34px;" />
+              <col style="width:64px;" />
               <col style="width:auto;" />
             </colgroup>
             <thead>
               <tr style="background:rgba(255,255,255,.06);">
-                <th style="text-align:center; padding:7px 6px;">세트</th>
-                <th style="text-align:center; padding:7px 6px;">게임</th>
-                <th style="text-align:center; padding:7px 6px;">마지막점수</th>
-                <th style="text-align:left; padding:7px 6px;">비고</th>
+                <th style="text-align:center; padding:6px 4px;">세트</th>
+                <th style="text-align:center; padding:6px 4px;">게임</th>
+                <th style="text-align:center; padding:6px 4px;">점수</th>
+                <th style="text-align:left; padding:6px 4px;">비고</th>
               </tr>
             </thead>
             <tbody>${tr}</tbody>
