@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.44');
+    const v = (window.__TS_APP_VERSION || 'v22.24.45');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.44";
+  const APP_VERSION = "v22.24.45";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -699,6 +699,49 @@ function debounce(fn, ms=120){
     };
   }
 
+  function _findCompletionPhotoDeep(root, seen = new Set()){
+    if(root == null) return null;
+
+    if(typeof root === 'string'){
+      const trimmed = root.trim();
+      if(trimmed.startsWith('data:image/')){
+        return _normalizeCompletionPhotoCandidate(trimmed);
+      }
+      const parsed = _maybeParseJson(trimmed);
+      if(parsed && parsed !== root){
+        return _findCompletionPhotoDeep(parsed, seen);
+      }
+      return null;
+    }
+
+    if(typeof root !== 'object') return null;
+    if(seen.has(root)) return null;
+    seen.add(root);
+
+    const direct = _normalizeCompletionPhotoCandidate(root);
+    if(direct?.dataUrl) return direct;
+
+    const directCandidates = [
+      root.completionPhoto,
+      root.media?.completionPhoto,
+      root.state?.media?.completionPhoto,
+      root.state?.completionPhoto,
+      root.data?.media?.completionPhoto,
+      root.data?.state?.media?.completionPhoto,
+      root.data?.completionPhoto
+    ];
+    for(const candidate of directCandidates){
+      const normalized = _normalizeCompletionPhotoCandidate(candidate);
+      if(normalized?.dataUrl) return normalized;
+    }
+
+    for(const value of Object.values(root)){
+      const nested = _findCompletionPhotoDeep(value, seen);
+      if(nested?.dataUrl) return nested;
+    }
+    return null;
+  }
+
   function getSavedCompletionPhotoFromRow(row){
     const rawData = _maybeParseJson(row?.data) || {};
     const d = (rawData && typeof rawData === 'object') ? rawData : {};
@@ -712,11 +755,15 @@ function debounce(fn, ms=120){
       s?.completionPhoto,
       d?.completionPhoto,
       row?.media?.completionPhoto,
-      row?.completionPhoto
+      row?.completionPhoto,
+      d,
+      s,
+      rawData,
+      row
     ];
 
     for(const candidate of candidates){
-      const normalized = _normalizeCompletionPhotoCandidate(candidate);
+      const normalized = _findCompletionPhotoDeep(candidate);
       if(normalized?.dataUrl) return normalized;
     }
     return null;
@@ -2657,19 +2704,23 @@ function checkWinTiebreak(){
     const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
     const gameHistoryHtml = buildGameHistoryHtml(s, d.undoHistory);
-    const photoHtml = completionPhoto?.dataUrl
-      ? `
+    const photoHtml = `
         <div style="margin-top:12px;">
           <div style="font-weight:800; margin-bottom:8px;">완료 사진</div>
-          <button id="cloudSummaryPhotoBtn" type="button" style="display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer;">
-            <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:260px; object-fit:cover; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
-          </button>
-          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button id="cloudSummaryPhotoViewBtn" type="button" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(245,158,11,.22); color:#fff5de; padding:8px 10px; cursor:pointer;">사진 보기</button>
-            <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(59,130,246,.22); color:#eaf3ff; padding:8px 10px; text-decoration:none;">다운로드</a>
-          </div>
-        </div>`
-      : ``;
+          ${completionPhoto?.dataUrl ? `
+            <button id="cloudSummaryPhotoBtn" type="button" style="display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer;">
+              <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:min(42vh, 260px); object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
+            </button>
+            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button id="cloudSummaryPhotoViewBtn" type="button" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(245,158,11,.22); color:#fff5de; padding:8px 10px; cursor:pointer;">사진 보기</button>
+              <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(59,130,246,.22); color:#eaf3ff; padding:8px 10px; text-decoration:none;">다운로드</a>
+            </div>
+          ` : `
+            <div style="padding:12px 14px; border-radius:12px; border:1px dashed rgba(255,255,255,.18); background:rgba(255,255,255,.03); color:rgba(255,255,255,.72); font-size:13px;">
+              저장된 완료 사진이 없습니다.
+            </div>
+          `}
+        </div>`;
       
     // 기존 요약 모달 닫고 새로 생성
     const old = document.getElementById('cloudSummaryBackdrop');
@@ -2867,11 +2918,11 @@ function checkWinTiebreak(){
           게임 기록 보기 (40:30 포함)
         </summary>
         <div style="margin-top:10px; overflow:auto; max-height:260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; min-width:420px; border-collapse:collapse; table-layout:fixed; font-size:12px;">
+          <table style="width:100%; min-width:320px; border-collapse:collapse; table-layout:fixed; font-size:12px;">
             <colgroup>
-              <col style="width:52px;" />
-              <col style="width:52px;" />
-              <col style="width:96px;" />
+              <col style="width:42px;" />
+              <col style="width:42px;" />
+              <col style="width:78px;" />
               <col style="width:auto;" />
             </colgroup>
             <thead>
