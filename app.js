@@ -945,16 +945,24 @@ function debounce(fn, ms=120){
     const cache = getCompletionPhotoCache() || null;
     const photo = explicitPhoto || getPendingCompletionPhoto() || (((cache?.saved || cache?.synced) && cache?.photo?.dataUrl) ? cache.photo : null);
     if(!photo?.dataUrl) return record;
+    const photoCopy = JSON.parse(JSON.stringify(photo));
     if(!record.media || typeof record.media !== 'object') record.media = {};
-    record.media.completionPhoto = JSON.parse(JSON.stringify(photo));
+    record.media.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
+    record.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
     if(!record.state || typeof record.state !== 'object'){
       const snap = window.__TS_SNAPSHOT?.();
       record.state = JSON.parse(JSON.stringify(snap?.state || state || {}));
     }
     if(!record.state.media || typeof record.state.media !== 'object') record.state.media = {};
-    record.state.media.completionPhoto = JSON.parse(JSON.stringify(photo));
-    if(!record.status) record.status = record.state?.winner ? 'completed' : 'completed';
-    if(!record.save_reason) record.save_reason = 'completed_photo_update';
+    record.state.media.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
+    record.state.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
+    const matchKey = record.match_key || record.state?.matchKey || getCompletedMatchSaveKey() || null;
+    if(matchKey){
+      record.match_key = matchKey;
+      record.state.matchKey = matchKey;
+    }
+    record.status = record.state?.winner ? 'completed' : (record.status || 'completed');
+    record.save_reason = 'completed_photo_update';
     record.saved_at = new Date().toISOString();
     return record;
   }
@@ -998,33 +1006,62 @@ function debounce(fn, ms=120){
     if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
-    const latestRow = await loadRecordById(_completedSavedRowId).catch(()=>null);
+    const saveRowId = _completedSavedRowId;
+    const latestRow = await loadRecordById(saveRowId).catch(()=>null);
     const latestRecord = _maybeParseJson(latestRow?.data) || null;
     const mergedRecord = buildPhotoMergedRecord(latestRecord || buildRecordPayload('completed_photo_update'), currentPhoto);
 
-    const { data, error } = await supabase
-      .from("match_records")
-      .update({
-        app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
-        data: mergedRecord
-      })
-      .eq("id", _completedSavedRowId)
-      .select("id, created_at, app_version, data");
+    const updateOnce = async (recordToSave)=>{
+      const { data, error } = await supabase
+        .from("match_records")
+        .update({
+          app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
+          data: recordToSave
+        })
+        .eq("id", saveRowId)
+        .select("id, created_at, app_version, data");
+      if(error) throw error;
+      return pickSingleRow(data) || null;
+    };
 
-    if(error) throw error;
-    const row = pickSingleRow(data) || latestRow || null;
-    if(row?.id) _completedSavedRowId = row.id;
+    let row = await updateOnce(mergedRecord) || latestRow || null;
+    let verifiedRow = await loadRecordById(saveRowId).catch(()=> row) || row;
+    let verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
+
+    if(!verifiedPhoto?.dataUrl){
+      const retryBase = _maybeParseJson(verifiedRow?.data) || verifiedRow?.data || mergedRecord;
+      row = await updateOnce(buildPhotoMergedRecord(retryBase, currentPhoto)) || row;
+      verifiedRow = await loadRecordById(saveRowId).catch(()=> row) || row;
+      verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
+    }
+
+    if(!verifiedPhoto?.dataUrl){
+      const fallbackRecord = buildPhotoMergedRecord(buildRecordPayload('completed_photo_insert_fallback'), currentPhoto);
+      const { data: inserted, error: insertError } = await supabase
+        .from("match_records")
+        .insert({ app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"), data: fallbackRecord })
+        .select("id, created_at, app_version, data");
+      if(insertError) throw insertError;
+      verifiedRow = pickSingleRow(inserted) || verifiedRow || row;
+      verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
+    }
+
+    if(!verifiedPhoto?.dataUrl){
+      throw new Error("사진 저장 확인 실패");
+    }
+
+    if(verifiedRow?.id) _completedSavedRowId = verifiedRow.id;
     _pendingCompletionPhotoSaved = true;
     setCompletionPhotoCache({
       photo: getPendingCompletionPhoto(),
-      rowId: _completedSavedRowId || null,
+      rowId: _completedSavedRowId || saveRowId || null,
       matchKey: getCompletedMatchSaveKey() || null,
       saved: true,
       synced: true,
       updatedAt: new Date().toISOString()
     });
     updateMatchResultPhotoUI();
-    return row;
+    return verifiedRow;
   }
 
   function openPhotoViewer(photo){
@@ -1083,14 +1120,17 @@ function debounce(fn, ms=120){
     const snapState = JSON.parse(JSON.stringify(snap.state || state || {}));
     const snapUndo  = JSON.parse(JSON.stringify(snap.undoHistory || []));
     const isCompleted = !!snapState.winner;
+    const completedKey = isCompleted ? (snapState.matchKey || getCompletedMatchSaveKey() || null) : null;
     if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
+    if(completedKey) snapState.matchKey = completedKey;
 
     const media = {};
     const completionPhoto = (isCompleted && isPendingCompletionPhotoSaved()) ? getPendingCompletionPhoto() : null;
     if(completionPhoto && isCompleted){
-      media.completionPhoto = completionPhoto;
+      media.completionPhoto = JSON.parse(JSON.stringify(completionPhoto));
       if(!snapState.media || typeof snapState.media !== "object") snapState.media = {};
       snapState.media.completionPhoto = JSON.parse(JSON.stringify(completionPhoto));
+      snapState.completionPhoto = JSON.parse(JSON.stringify(completionPhoto));
     }
 
     return {
@@ -1099,6 +1139,8 @@ function debounce(fn, ms=120){
       status: isCompleted ? "completed" : "in_progress",
       save_reason: saveReason,
       completed_at: isCompleted ? (snapState.completedAt || now) : null,
+      match_key: completedKey,
+      completionPhoto: completionPhoto ? JSON.parse(JSON.stringify(completionPhoto)) : null,
       state: snapState,
       undoHistory: snapUndo,
       media
@@ -2671,14 +2713,69 @@ function checkWinTiebreak(){
     const el = document.getElementById('cloudLoadBackdrop');
     if(el) el.remove();
   }
-  
+
+  function getCloudRowMatchKey(row){
+    const d = _maybeParseJson(row?.data) || {};
+    const s = _maybeParseJson(d?.state) || {};
+    if(_isInProgressState(s)) return null;
+    return d?.match_key || s?.matchKey || getCompletedMatchSaveKeyFromSnapshot?.(s, d) || null;
+  }
+
+  function getCompletedMatchSaveKeyFromSnapshot(s, d){
+    try{
+      const names = s?.names || {};
+      return JSON.stringify({
+        winner: s?.winner || d?.winner || null,
+        mode: s?.mode || d?.match?.mode || null,
+        bestOf: s?.bestOf ?? d?.bestOf ?? null,
+        gamesToWin: s?.gamesToWin ?? d?.gamesToWin ?? null,
+        sets: s?.sets || null,
+        games: s?.games || null,
+        completedSets: s?.completedSets || null,
+        names: [names.A, names.B, names.A1, names.A2, names.B1, names.B2]
+      });
+    }catch(_e){
+      return null;
+    }
+  }
+
+  function dedupeCloudRows(rows){
+    if(!Array.isArray(rows)) return [];
+    const keep = new Map();
+    const passthrough = [];
+    const score = (row)=>{
+      const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl;
+      const t = row?.created_at ? new Date(row.created_at).getTime() : 0;
+      return { photo, t };
+    };
+    const chooseBetter = (a,b)=>{
+      const sa = score(a), sb = score(b);
+      if(sa.photo !== sb.photo) return sb.photo ? b : a;
+      return sb.t > sa.t ? b : a;
+    };
+    rows.forEach((row)=>{
+      const key = getCloudRowMatchKey(row);
+      if(!key){
+        passthrough.push(row);
+        return;
+      }
+      const prev = keep.get(key);
+      keep.set(key, prev ? chooseBetter(prev, row) : row);
+    });
+    return [...passthrough, ...keep.values()].sort((a,b)=>{
+      const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
+      const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      return bt - at;
+    });
+  }
+
   async function openCloudLoad(){
     try{
       // supabase 준비
       if(!supabase) await initSupabase();
   
       // 최근 기록 조회
-      const rows = await loadRecentRecords(20); // 이미 만들어둔 함수 사용
+      const rows = dedupeCloudRows(await loadRecentRecords(30)); // 사진 저장 fallback row 포함해도 1건으로 표시
   
       // 모달 생성
       _closeCloudLoad();
