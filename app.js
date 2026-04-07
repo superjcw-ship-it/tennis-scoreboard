@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.54');
+    const v = (window.__TS_APP_VERSION || 'v22.24.38');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.54";
+  const APP_VERSION = "v22.24.55";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -640,7 +640,6 @@ function debounce(fn, ms=120){
   let _completedSavedKey = null;
   let _completedSavedRowId = null;
   let _pendingCompletionPhoto = null;
-  let _pendingCompletionPhotoSaved = false;
 
   function getPendingCompletionPhoto(){
     return _pendingCompletionPhoto ? JSON.parse(JSON.stringify(_pendingCompletionPhoto)) : null;
@@ -648,7 +647,6 @@ function debounce(fn, ms=120){
 
   function clearPendingCompletionPhoto(){
     _pendingCompletionPhoto = null;
-    _pendingCompletionPhotoSaved = false;
     try{
       const input = document.getElementById("matchResultPhotoInput");
       if(input) input.value = "";
@@ -658,112 +656,109 @@ function debounce(fn, ms=120){
 
   function setPendingCompletionPhoto(photo){
     _pendingCompletionPhoto = photo ? JSON.parse(JSON.stringify(photo)) : null;
-    _pendingCompletionPhotoSaved = false;
     updateMatchResultPhotoUI();
   }
 
-  function getCommittedCompletionPhoto(){
-    const photo = getPendingCompletionPhoto();
-    return (photo && _pendingCompletionPhotoSaved) ? photo : null;
-  }
-
-  function safeParseObject(value){
-    if(!value) return null;
-    if(typeof value === "object") return value;
-    if(typeof value === "string"){
-      try{
-        const parsed = JSON.parse(value);
-        return (parsed && typeof parsed === "object") ? parsed : null;
-      }catch(_e){
-        return null;
-      }
+  function _maybeParseJson(value){
+    if(value == null) return value;
+    if(typeof value !== "string") return value;
+    const t = value.trim();
+    if(!t) return null;
+    if((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))){
+      try{ return JSON.parse(t); }catch(_e){ return value; }
     }
-    return null;
+    return value;
   }
 
-  function normalizePhotoCandidate(candidate){
-    const obj = safeParseObject(candidate);
-    if(obj && typeof obj.dataUrl === 'string' && obj.dataUrl.startsWith('data:image/')){
-      return obj;
+  function _normalizeCompletionPhotoCandidate(candidate){
+    const c = _maybeParseJson(candidate);
+    if(!c) return null;
+    if(typeof c === "string"){
+      if(c.startsWith("data:image/")){
+        return {
+          name: `match-photo-${Date.now()}.jpg`,
+          mimeType: c.slice(5, c.indexOf(';')) || 'image/jpeg',
+          sizeBytes: Math.round((c.length * 3) / 4),
+          width: null,
+          height: null,
+          dataUrl: c,
+          capturedAt: null
+        };
+      }
+      return null;
+    }
+    const dataUrl = c.dataUrl || c.url || c.src || c.base64 || null;
+    if(!dataUrl || typeof dataUrl !== "string") return null;
+    return {
+      name: c.name || 'match-photo.jpg',
+      mimeType: c.mimeType || 'image/jpeg',
+      sizeBytes: c.sizeBytes ?? null,
+      width: c.width ?? null,
+      height: c.height ?? null,
+      dataUrl,
+      capturedAt: c.capturedAt || null
+    };
+  }
+
+  function _findCompletionPhotoDeep(root, seen=new Set()){
+    if(root == null) return null;
+    const parsedRoot = _maybeParseJson(root);
+    if(parsedRoot !== root) return _findCompletionPhotoDeep(parsedRoot, seen);
+    if(typeof root === "string"){
+      return _normalizeCompletionPhotoCandidate(root);
+    }
+    if(typeof root !== "object") return null;
+    if(seen.has(root)) return null;
+    seen.add(root);
+
+    const directCandidates = [
+      root,
+      root.completionPhoto,
+      root.media?.completionPhoto,
+      root.state?.media?.completionPhoto,
+      root.state?.completionPhoto,
+      root.data?.media?.completionPhoto,
+      root.data?.state?.media?.completionPhoto,
+      root.data?.completionPhoto
+    ];
+
+    for(const candidate of directCandidates){
+      const normalized = _normalizeCompletionPhotoCandidate(candidate);
+      if(normalized?.dataUrl) return normalized;
+    }
+
+    for(const value of Object.values(root)){
+      const nested = _findCompletionPhotoDeep(value, seen);
+      if(nested?.dataUrl) return nested;
     }
     return null;
   }
 
   function getSavedCompletionPhotoFromRow(row){
-    const queue = [];
-    const seen = new Set();
-    const push = (value)=>{
-      if(!value) return;
-      const obj = safeParseObject(value) || value;
-      if(!obj || typeof obj !== 'object') return;
-      if(seen.has(obj)) return;
-      seen.add(obj);
-      queue.push(obj);
-    };
+    const rawData = _maybeParseJson(row?.data) || {};
+    const d = (rawData && typeof rawData === 'object') ? rawData : {};
+    const s = _maybeParseJson(d?.state) || {};
+    const media = _maybeParseJson(d?.media) || {};
+    const stateMedia = _maybeParseJson(s?.media) || {};
 
-    push(row);
-    push(row?.data);
-    push(row?.media);
-    push(row?.data?.media);
-    push(row?.data?.state);
-    push(row?.data?.state?.media);
+    const candidates = [
+      media?.completionPhoto,
+      stateMedia?.completionPhoto,
+      s?.completionPhoto,
+      d?.completionPhoto,
+      row?.media?.completionPhoto,
+      row?.completionPhoto,
+      d,
+      s,
+      rawData,
+      row
+    ];
 
-    let guard = 0;
-    while(queue.length && guard < 500){
-      guard += 1;
-      const cur = queue.shift();
-      const direct = normalizePhotoCandidate(cur)
-        || normalizePhotoCandidate(cur?.completionPhoto)
-        || normalizePhotoCandidate(cur?.media?.completionPhoto)
-        || normalizePhotoCandidate(cur?.state?.media?.completionPhoto);
-      if(direct) return direct;
-
-      if(Array.isArray(cur)){
-        cur.forEach(push);
-        continue;
-      }
-
-      for(const [key, value] of Object.entries(cur)){
-        if(key === 'completionPhoto'){
-          const found = normalizePhotoCandidate(value);
-          if(found) return found;
-        }
-        push(value);
-      }
+    for(const candidate of candidates){
+      const normalized = _findCompletionPhotoDeep(candidate);
+      if(normalized?.dataUrl) return normalized;
     }
     return null;
-  }
-
-  function getRowMatchKey(row){
-    try{
-      const d = safeParseObject(row?.data) || {};
-      const s = safeParseObject(d.state) || {};
-      const names = s.names || {};
-      return JSON.stringify({
-        status: d.status || (s.winner ? 'completed' : 'in_progress'),
-        winner: s.winner || '',
-        mode: s.mode || d.match?.mode || '',
-        bestOf: s.bestOf ?? d.match?.bestOf ?? '',
-        gamesToWin: s.gamesToWin ?? d.match?.gamesToWin ?? '',
-        completedSets: Array.isArray(s.completedSets) ? s.completedSets : [],
-        names: [names.A || '', names.B || '', names.A1 || '', names.A2 || '', names.B1 || '', names.B2 || '']
-      });
-    }catch(_e){
-      return row?.id ? `id:${row.id}` : null;
-    }
-  }
-
-  function mergeCompletionPhotoIntoRow(baseRow, sourceRow){
-    const photo = getSavedCompletionPhotoFromRow(sourceRow);
-    if(!photo) return baseRow;
-    const next = Object.assign({}, baseRow || {});
-    const d = safeParseObject(next.data) || {};
-    const stateObj = safeParseObject(d.state) || {};
-    d.media = Object.assign({}, d.media || {}, { completionPhoto: photo });
-    stateObj.media = Object.assign({}, stateObj.media || {}, { completionPhoto: photo });
-    d.state = stateObj;
-    next.data = d;
-    return next;
   }
 
   function updateMatchResultPhotoUI(){
@@ -772,10 +767,8 @@ function debounce(fn, ms=120){
       const img = document.getElementById("matchResultPhotoPreview");
       const meta = document.getElementById("matchResultPhotoMeta");
       const removeBtn = document.getElementById("removeMatchResultPhotoBtn");
-      const saveBtn = document.getElementById("saveMatchResultPhotoBtn");
-      const statusEl = document.getElementById("matchResultPhotoSaveStatus");
       const photo = getPendingCompletionPhoto();
-      if(!wrap || !img || !meta || !removeBtn || !saveBtn || !statusEl) return;
+      if(!wrap || !img || !meta || !removeBtn) return;
       if(photo?.dataUrl){
         wrap.classList.add("hasPhoto");
         img.src = photo.dataUrl;
@@ -783,23 +776,11 @@ function debounce(fn, ms=120){
         const dimText = (photo.width && photo.height) ? ` · ${photo.width}×${photo.height}` : "";
         meta.textContent = `${photo.name || 'captured-photo.jpg'}${dimText}${sizeText}`;
         removeBtn.style.display = "inline-flex";
-        saveBtn.style.display = "inline-flex";
-        saveBtn.disabled = !!_pendingCompletionPhotoSaved;
-        saveBtn.textContent = _pendingCompletionPhotoSaved ? "사진 저장 완료" : "사진 저장";
-        statusEl.textContent = _pendingCompletionPhotoSaved
-          ? "사진이 경기 기록에 저장되었습니다."
-          : "사진을 선택했습니다. '사진 저장' 버튼을 눌러야 경기 기록에 반영됩니다.";
-        statusEl.style.color = _pendingCompletionPhotoSaved ? 'rgba(61,220,132,1)' : 'rgba(255,255,255,.72)';
       }else{
         wrap.classList.remove("hasPhoto");
         img.removeAttribute("src");
         meta.textContent = "";
         removeBtn.style.display = "none";
-        saveBtn.style.display = "none";
-        saveBtn.disabled = true;
-        saveBtn.textContent = "사진 저장";
-        statusEl.textContent = "사진은 선택사항입니다. 선택 후 저장하면 경기 기록에 함께 남습니다.";
-        statusEl.style.color = 'rgba(255,255,255,.62)';
       }
     }catch(_e){}
   }
@@ -867,76 +848,26 @@ function debounce(fn, ms=120){
 
   async function persistCompletionPhotoToSavedRecord(){
     if(!_pendingCompletionPhoto) return null;
-    if(!_completedSavedRowId) await ensureCompletedMatchSaved();
+    if(!_completedSavedRowId){
+      await ensureCompletedMatchSaved();
+    }
     if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
-    const prevSaved = _pendingCompletionPhotoSaved;
-    _pendingCompletionPhotoSaved = true;
-    try{
-      const record = buildRecordPayload("completed_photo_update");
-      const { data, error } = await supabase
-        .from("match_records")
-        .update({
-          app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
-          data: record
-        })
-        .eq("id", _completedSavedRowId)
-        .select("id, data");
+    const record = buildRecordPayload("completed_photo_update");
+    const { data, error } = await supabase
+      .from("match_records")
+      .update({
+        app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
+        data: record
+      })
+      .eq("id", _completedSavedRowId)
+      .select("id, data");
 
-      if(error) throw error;
-      updateMatchResultPhotoUI();
-      return pickSingleRow(data);
-    }catch(err){
-      _pendingCompletionPhotoSaved = prevSaved;
-      updateMatchResultPhotoUI();
-      throw err;
-    }
-  }
-
-  function dataUrlToBlob(dataUrl){
-    const parts = String(dataUrl || '').split(',');
-    if(parts.length < 2) throw new Error('이미지 데이터가 올바르지 않습니다.');
-    const header = parts[0] || '';
-    const mime = (header.match(/data:([^;]+)/)?.[1]) || 'image/jpeg';
-    const bin = atob(parts[1]);
-    const len = bin.length;
-    const bytes = new Uint8Array(len);
-    for(let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
-  }
-
-  function completionPhotoToFile(photo){
-    if(!photo?.dataUrl) throw new Error('저장된 사진이 없습니다.');
-    const blob = dataUrlToBlob(photo.dataUrl);
-    const fallbackExt = (blob.type === 'image/png') ? 'png' : 'jpg';
-    const safeName = String(photo.name || `match-photo-${Date.now()}.${fallbackExt}`);
-    return new File([blob], safeName, { type: blob.type || photo.mimeType || 'image/jpeg' });
-  }
-
-  async function shareCompletionPhoto(photo){
-    if(!navigator.share) throw new Error('이 브라우저는 공유 기능을 지원하지 않습니다.');
-    const file = completionPhotoToFile(photo);
-    const shareData = {
-      title: '경기 완료 사진',
-      text: '테니스 경기 완료 사진',
-      files: [file]
-    };
-    if(typeof navigator.canShare === 'function' && !navigator.canShare({ files:[file] })){
-      throw new Error('이 기기에서는 사진 공유를 지원하지 않습니다.');
-    }
-    await navigator.share(shareData);
-  }
-
-  function canShareCompletionPhoto(photo){
-    try{
-      if(!navigator.share || !photo?.dataUrl) return false;
-      const file = completionPhotoToFile(photo);
-      if(typeof navigator.canShare === 'function') return navigator.canShare({ files:[file] });
-      return true;
-    }catch(_e){
-      return false;
-    }
+    if(error) throw error;
+    const row = pickSingleRow(data);
+    if(row?.id) _completedSavedRowId = row.id;
+    return row;
   }
 
   function openPhotoViewer(photo){
@@ -952,27 +883,15 @@ function debounce(fn, ms=120){
       const head = document.createElement("div");
       head.style.cssText = `display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.08);`;
       const fileName = photo.name || 'match-photo.jpg';
-      const shareBtnHtml = canShareCompletionPhoto(photo)
-        ? `<button id="completionPhotoViewerShareBtn" type="button" style="padding:8px 10px; border-radius:10px; background:rgba(16,185,129,.22); border:1px solid rgba(16,185,129,.45); color:#e9fff4; cursor:pointer;">공유/사진앱</button>`
-        : ``;
-      head.innerHTML = `<div style="font-weight:800;">완료 사진</div><div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">${shareBtnHtml}<a href="${photo.dataUrl}" download="${fileName}" style="padding:8px 10px; border-radius:10px; background:rgba(59,130,246,.24); border:1px solid rgba(59,130,246,.45); color:#eaf3ff; text-decoration:none;">다운로드</a><button id="completionPhotoViewerCloseBtn" style="border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;">✕</button></div>`;
+      head.innerHTML = `<div style="font-weight:800;">완료 사진</div><div style="display:flex; gap:8px; align-items:center;"><a href="${photo.dataUrl}" download="${fileName}" style="padding:8px 10px; border-radius:10px; background:rgba(59,130,246,.24); border:1px solid rgba(59,130,246,.45); color:#eaf3ff; text-decoration:none;">다운로드</a><button id="completionPhotoViewerCloseBtn" style="border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;">✕</button></div>`;
       const body = document.createElement("div");
       body.style.cssText = `padding:14px;`;
-      body.innerHTML = `<img src="${photo.dataUrl}" alt="완료 사진" style="display:block; width:100%; max-height:72vh; height:auto; object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />`;
+      body.innerHTML = `<img src="${photo.dataUrl}" alt="완료 사진" style="display:block; width:100%; height:auto; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />`;
       card.appendChild(head);
       card.appendChild(body);
       backdrop.appendChild(card);
       document.body.appendChild(backdrop);
       document.getElementById("completionPhotoViewerCloseBtn")?.addEventListener("click", ()=>backdrop.remove());
-      document.getElementById("completionPhotoViewerShareBtn")?.addEventListener("click", async ()=>{
-        try{
-          await shareCompletionPhoto(photo);
-        }catch(err){
-          if(err && err.name === 'AbortError') return;
-          console.error(err);
-          alert('공유 실패: ' + (err?.message || err));
-        }
-      });
       backdrop.addEventListener("click", (e)=>{ if(e.target === backdrop) backdrop.remove(); });
     }catch(err){
       console.error(err);
@@ -1010,11 +929,8 @@ function debounce(fn, ms=120){
     if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
 
     const media = {};
-    const completionPhoto = getCommittedCompletionPhoto();
-    if(completionPhoto && isCompleted){
-      media.completionPhoto = completionPhoto;
-      snapState.media = Object.assign({}, snapState.media || {}, { completionPhoto });
-    }
+    const completionPhoto = getPendingCompletionPhoto();
+    if(completionPhoto && isCompleted) media.completionPhoto = completionPhoto;
 
     return {
       schema_version: "match_v1",
@@ -1088,29 +1004,10 @@ function debounce(fn, ms=120){
     }
   }
 
-  async function savePendingCompletionPhotoFromModal(){
-    const photo = getPendingCompletionPhoto();
-    if(!photo){
-      alert("먼저 사진을 촬영하거나 선택해주세요.");
-      return null;
-    }
-    try{
-      await ensureCompletedMatchSaved();
-      const row = await persistCompletionPhotoToSavedRecord();
-      updateMatchResultPhotoUI();
-      return row;
-    }catch(err){
-      updateMatchResultPhotoUI();
-      throw err;
-    }
-  }
-
   async function regameFromMatchResult(){
     try{
       await ensureCompletedMatchSaved();
-      if(_pendingCompletionPhotoSaved){
-        await persistCompletionPhotoToSavedRecord();
-      }
+      await persistCompletionPhotoToSavedRecord();
       closeMatchResultModal();
       resetScoresOnly();
       state.started = true;
@@ -1126,9 +1023,7 @@ function debounce(fn, ms=120){
   async function goSetupFromMatchResult(){
     try{
       await ensureCompletedMatchSaved();
-      if(_pendingCompletionPhotoSaved){
-        await persistCompletionPhotoToSavedRecord();
-      }
+      await persistCompletionPhotoToSavedRecord();
       closeMatchResultModal();
       resetFullToSetup();
     }catch(err){
@@ -1142,7 +1037,6 @@ function debounce(fn, ms=120){
     const setupBtn = document.getElementById("goSetupAfterMatchBtn");
     const takePhotoBtn = document.getElementById("takeMatchResultPhotoBtn");
     const removePhotoBtn = document.getElementById("removeMatchResultPhotoBtn");
-    const savePhotoBtn = document.getElementById("saveMatchResultPhotoBtn");
     const photoInput = document.getElementById("matchResultPhotoInput");
 
     if(backdrop && !backdrop.__matchResultWired){
@@ -1179,19 +1073,6 @@ function debounce(fn, ms=120){
         clearPendingCompletionPhoto();
       });
     }
-    if(savePhotoBtn && !savePhotoBtn.__matchResultWired){
-      savePhotoBtn.__matchResultWired = true;
-      savePhotoBtn.addEventListener("click", async (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-        try{
-          await savePendingCompletionPhotoFromModal();
-        }catch(err){
-          console.error(err);
-          alert("사진 저장 실패: " + (err?.message || err));
-        }
-      });
-    }
     if(photoInput && !photoInput.__matchResultWired){
       photoInput.__matchResultWired = true;
       photoInput.addEventListener("change", async ()=>{
@@ -1199,6 +1080,10 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
+          if(state?.winner){
+            await ensureCompletedMatchSaved();
+            await persistCompletionPhotoToSavedRecord();
+          }
         }catch(err){
           console.error(err);
           alert("사진 처리 실패: " + (err?.message || err));
@@ -2693,7 +2578,7 @@ function checkWinTiebreak(){
             cursor: pointer;
           `;
   
-          const hasPhoto = !!getSavedCompletionPhotoFromRow(r)?.dataUrl;
+          const hasPhoto = !!(d?.media?.completionPhoto?.dataUrl);
           const tag = inProg
             ? `<span style="padding:2px 8px; border-radius:999px; background: rgba(59,130,246,.25); border:1px solid rgba(59,130,246,.5); color:#eaf3ff; font-size:12px;">진행중 · 복원가능</span>`
             : `<span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); color:#eafff6; font-size:12px;">완료</span>`;
@@ -2777,25 +2662,20 @@ function checkWinTiebreak(){
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
     const gameHistoryHtml = buildGameHistoryHtml(s, d.undoHistory);
     const completionPhoto = getSavedCompletionPhotoFromRow(row);
-    const photoShareBtnHtml = canShareCompletionPhoto(completionPhoto)
-      ? `<button id="cloudSummaryPhotoShareBtn" type="button" style="border-radius:10px; border:1px solid rgba(16,185,129,.45); background: rgba(16,185,129,.22); color:#e9fff4; padding:8px 10px; cursor:pointer;">공유/사진앱</button>`
-      : ``;
     const photoHtml = completionPhoto?.dataUrl
       ? `
-        <div style="width:100%; max-width:min(100%, 420px); margin:0 auto 12px; text-align:center;">
+        <div style="margin-top:12px;">
           <div style="font-weight:800; margin-bottom:8px;">완료 사진</div>
           <button id="cloudSummaryPhotoBtn" type="button" style="display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer;">
-            <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:min(42vh, 300px); object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
+            <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:260px; object-fit:cover; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
           </button>
-          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center;">
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
             <button id="cloudSummaryPhotoViewBtn" type="button" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(245,158,11,.22); color:#fff5de; padding:8px 10px; cursor:pointer;">사진 보기</button>
-            ${photoShareBtnHtml}
             <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(59,130,246,.22); color:#eaf3ff; padding:8px 10px; text-decoration:none;">다운로드</a>
           </div>
-          <div style="margin-top:6px; font-size:12px; color:rgba(255,255,255,.62);">공유/사진앱을 누르면 기기에서 사진앱·카카오톡 등 가능한 앱을 선택할 수 있습니다.</div>
         </div>`
       : ``;
-
+      
     // 기존 요약 모달 닫고 새로 생성
     const old = document.getElementById('cloudSummaryBackdrop');
     if(old) old.remove();
@@ -2838,35 +2718,29 @@ function checkWinTiebreak(){
     body.style.cssText = `padding: 12px 14px; overflow:auto; max-height: calc(80vh - 48px);`;
   
     body.innerHTML = `
-      <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:12px;">
-        <div style="font-size:16px; font-weight:800; margin-bottom:8px; text-align:center;">
-          ${leftName}  vs  ${rightName}
-        </div>
-
-        <div style="width:100%; text-align:center; margin-bottom:8px;">
-          <span style="display:inline-flex; align-items:center; justify-content:center; padding:3px 10px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px; font-weight:800;">완료</span>
-        </div>
-
-        ${photoHtml}
-
-        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:0 0 4px;">
-          <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">NO-AD ${noAd}</span>
-          <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">TB ${tbOn}</span>
-          <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
-        </div>
+      <div style="font-size:16px; font-weight:800; margin-bottom:8px;">
+        ${leftName}  vs  ${rightName}
       </div>
-
+  
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px;">완료</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">NO-AD ${noAd}</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">TB ${tbOn}</span>
+        <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
+      </div>
+  
       <div style="line-height:1.6; color: rgba(255,255,255,.88);">
         <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
         <div style="margin-top:4px;"><b>세트 상세</b>: ${setLines}</div>
         <div style="margin-top:6px;"><b>승자</b>: ${winner}</div>
         ${gameHistoryHtml}
+        ${photoHtml}
         <div style="margin-top:6px; font-size:13px; color: rgba(255,255,255,.70);">
           저장시간: ${savedAt}<br/>
           row 생성시간: ${created}
         </div>
       </div>
-
+  
       <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
         <button id="cloudSummaryCopyBtn" style="
           border-radius:10px; border:1px solid rgba(255,255,255,.12);
@@ -2886,15 +2760,6 @@ function checkWinTiebreak(){
   
     document.getElementById('cloudSummaryPhotoBtn')?.addEventListener('click', ()=> openPhotoViewer(completionPhoto));
     document.getElementById('cloudSummaryPhotoViewBtn')?.addEventListener('click', ()=> openPhotoViewer(completionPhoto));
-    document.getElementById('cloudSummaryPhotoShareBtn')?.addEventListener('click', async ()=>{
-      try{
-        await shareCompletionPhoto(completionPhoto);
-      }catch(err){
-        if(err && err.name === 'AbortError') return;
-        console.error(err);
-        alert('공유 실패: ' + (err?.message || err));
-      }
-    });
 
     document.getElementById('cloudSummaryCopyBtn')?.addEventListener('click', async ()=>{
       const text =
@@ -3004,12 +2869,12 @@ function checkWinTiebreak(){
           게임 기록 보기 (40:30 포함)
         </summary>
         <div style="margin-top:10px; overflow:auto; max-height: 260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; min-width:520px;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
               <tr style="background:rgba(255,255,255,.06);">
-                <th style="text-align:left; padding:8px; width:52px;">세트</th>
-                <th style="text-align:left; padding:8px; width:52px;">게임</th>
-                <th style="text-align:left; padding:8px; width:108px;">마지막 점수</th>
+                <th style="text-align:left; padding:8px;">세트</th>
+                <th style="text-align:left; padding:8px;">게임</th>
+                <th style="text-align:left; padding:8px;">마지막 점수</th>
                 <th style="text-align:left; padding:8px;">비고</th>
               </tr>
             </thead>
@@ -3540,104 +3405,15 @@ async function initSupabase() {
 async function loadRecentRecords(limit = 10) {
   if (!supabase) await initSupabase();
 
-  const fetchLimit = Math.max(limit * 4, 40);
   const { data, error } = await supabase
     .from("match_records")
     .select("id, created_at, app_version, data")
     .order("created_at", { ascending: false })
-    .limit(fetchLimit);
+    .limit(limit);
 
   if (error) throw error;
-
-  const localParse = (value)=>{
-    if (value == null) return null;
-    if (typeof value === 'object') return value;
-    if (typeof value !== 'string') return null;
-    try { return JSON.parse(value); } catch(_e) { return null; }
-  };
-  const normalizePhoto = (candidate)=>{
-    if (!candidate) return null;
-    const parsed = localParse(candidate) || candidate;
-    if (parsed && typeof parsed === 'object' && typeof parsed.dataUrl === 'string' && parsed.dataUrl) {
-      return parsed;
-    }
-    return null;
-  };
-  const extractPhoto = (row)=>{
-    const parsedRow = localParse(row?.data) || row?.data || {};
-    const d = parsedRow || {};
-    const s = d.state || {};
-    return normalizePhoto(d?.media?.completionPhoto)
-      || normalizePhoto(s?.media?.completionPhoto)
-      || normalizePhoto(d?.completionPhoto)
-      || normalizePhoto(row?.media?.completionPhoto)
-      || null;
-  };
-  const getKey = (row)=>{
-    const parsedRow = localParse(row?.data) || row?.data || {};
-    const d = parsedRow || {};
-    const s = d.state || {};
-    const names = s.names || {};
-    const mode = s.mode || d?.match?.mode || 'unknown';
-    const nameKey = mode === 'doubles'
-      ? `${names.A1||'A1'}|${names.A2||'A2'}|${names.B1||'B1'}|${names.B2||'B2'}`
-      : `${names.A||'A'}|${names.B||'B'}`;
-    const sets = `${s?.sets?.A ?? '-'}-${s?.sets?.B ?? '-'}`;
-    const games = `${s?.games?.A ?? '-'}-${s?.games?.B ?? '-'}`;
-    const winner = s?.winner || 'nowinner';
-    return d?.matchKey || `${mode}|${nameKey}|${sets}|${games}|${winner}`;
-  };
-  const mergeRows = (baseRow, sourceRow)=>{
-    const baseData = localParse(baseRow?.data) || baseRow?.data || {};
-    const sourceData = localParse(sourceRow?.data) || sourceRow?.data || {};
-    const photo = extractPhoto(sourceRow) || extractPhoto(baseRow);
-    const mergedData = Object.assign({}, baseData);
-    mergedData.media = Object.assign({}, mergedData.media || {}, sourceData.media || {});
-    mergedData.state = Object.assign({}, mergedData.state || {}, sourceData.state || {});
-    mergedData.state.media = Object.assign({}, mergedData.state?.media || {}, sourceData.state?.media || {});
-    if (photo) {
-      mergedData.media = Object.assign({}, mergedData.media || {}, { completionPhoto: photo });
-      mergedData.state = Object.assign({}, mergedData.state || {});
-      mergedData.state.media = Object.assign({}, mergedData.state.media || {}, { completionPhoto: photo });
-    }
-    return Object.assign({}, baseRow, sourceRow, { data: mergedData });
-  };
-
-  const rows = Array.isArray(data)
-    ? data.map((row)=>{
-        const parsed = localParse(row?.data) || row?.data || {};
-        return Object.assign({}, row, { data: parsed });
-      })
-    : [];
-
-  const grouped = new Map();
-  for (const row of rows) {
-    const key = getKey(row) || `id:${row?.id || Math.random()}`;
-    const existing = grouped.get(key);
-    if (!existing) {
-      grouped.set(key, row);
-      continue;
-    }
-
-    const existingPhoto = extractPhoto(existing);
-    const incomingPhoto = extractPhoto(row);
-    if (existingPhoto && !incomingPhoto) continue;
-    if (!existingPhoto && incomingPhoto) {
-      grouped.set(key, mergeRows(existing, row));
-      continue;
-    }
-    if (existingPhoto && incomingPhoto) {
-      grouped.set(key, mergeRows(existing, row));
-      continue;
-    }
-  }
-
-  const merged = Array.from(grouped.values())
-    .sort((a,b)=>new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime())
-    .slice(0, limit);
-
-  console.log("✅ recent records:", merged);
-  return merged;
+  console.log("✅ recent records:", data);
+  return data;
 }
 
 window.addEventListener('load', async ()=>{
