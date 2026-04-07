@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.52');
+    const v = (window.__TS_APP_VERSION || 'v22.24.53');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.52";
+  const APP_VERSION = "v22.24.53";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -667,17 +667,103 @@ function debounce(fn, ms=120){
     return (photo && _pendingCompletionPhotoSaved) ? photo : null;
   }
 
-  function getSavedCompletionPhotoFromRow(row){
-    const d = row?.data || {};
-    const candidates = [
-      d?.media?.completionPhoto,
-      d?.state?.media?.completionPhoto,
-      row?.media?.completionPhoto
-    ];
-    for(const c of candidates){
-      if(c?.dataUrl) return c;
+  function safeParseObject(value){
+    if(!value) return null;
+    if(typeof value === "object") return value;
+    if(typeof value === "string"){
+      try{
+        const parsed = JSON.parse(value);
+        return (parsed && typeof parsed === "object") ? parsed : null;
+      }catch(_e){
+        return null;
+      }
     }
     return null;
+  }
+
+  function normalizePhotoCandidate(candidate){
+    const obj = safeParseObject(candidate);
+    if(obj && typeof obj.dataUrl === 'string' && obj.dataUrl.startsWith('data:image/')){
+      return obj;
+    }
+    return null;
+  }
+
+  function getSavedCompletionPhotoFromRow(row){
+    const queue = [];
+    const seen = new Set();
+    const push = (value)=>{
+      if(!value) return;
+      const obj = safeParseObject(value) || value;
+      if(!obj || typeof obj !== 'object') return;
+      if(seen.has(obj)) return;
+      seen.add(obj);
+      queue.push(obj);
+    };
+
+    push(row);
+    push(row?.data);
+    push(row?.media);
+    push(row?.data?.media);
+    push(row?.data?.state);
+    push(row?.data?.state?.media);
+
+    let guard = 0;
+    while(queue.length && guard < 500){
+      guard += 1;
+      const cur = queue.shift();
+      const direct = normalizePhotoCandidate(cur)
+        || normalizePhotoCandidate(cur?.completionPhoto)
+        || normalizePhotoCandidate(cur?.media?.completionPhoto)
+        || normalizePhotoCandidate(cur?.state?.media?.completionPhoto);
+      if(direct) return direct;
+
+      if(Array.isArray(cur)){
+        cur.forEach(push);
+        continue;
+      }
+
+      for(const [key, value] of Object.entries(cur)){
+        if(key === 'completionPhoto'){
+          const found = normalizePhotoCandidate(value);
+          if(found) return found;
+        }
+        push(value);
+      }
+    }
+    return null;
+  }
+
+  function getRowMatchKey(row){
+    try{
+      const d = safeParseObject(row?.data) || {};
+      const s = safeParseObject(d.state) || {};
+      const names = s.names || {};
+      return JSON.stringify({
+        status: d.status || (s.winner ? 'completed' : 'in_progress'),
+        winner: s.winner || '',
+        mode: s.mode || d.match?.mode || '',
+        bestOf: s.bestOf ?? d.match?.bestOf ?? '',
+        gamesToWin: s.gamesToWin ?? d.match?.gamesToWin ?? '',
+        completedSets: Array.isArray(s.completedSets) ? s.completedSets : [],
+        names: [names.A || '', names.B || '', names.A1 || '', names.A2 || '', names.B1 || '', names.B2 || '']
+      });
+    }catch(_e){
+      return row?.id ? `id:${row.id}` : null;
+    }
+  }
+
+  function mergeCompletionPhotoIntoRow(baseRow, sourceRow){
+    const photo = getSavedCompletionPhotoFromRow(sourceRow);
+    if(!photo) return baseRow;
+    const next = Object.assign({}, baseRow || {});
+    const d = safeParseObject(next.data) || {};
+    const stateObj = safeParseObject(d.state) || {};
+    d.media = Object.assign({}, d.media || {}, { completionPhoto: photo });
+    stateObj.media = Object.assign({}, stateObj.media || {}, { completionPhoto: photo });
+    d.state = stateObj;
+    next.data = d;
+    return next;
   }
 
   function updateMatchResultPhotoUI(){
@@ -2918,12 +3004,12 @@ function checkWinTiebreak(){
           게임 기록 보기 (40:30 포함)
         </summary>
         <div style="margin-top:10px; overflow:auto; max-height: 260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; min-width:520px;">
             <thead>
               <tr style="background:rgba(255,255,255,.06);">
-                <th style="text-align:left; padding:8px;">세트</th>
-                <th style="text-align:left; padding:8px;">게임</th>
-                <th style="text-align:left; padding:8px;">마지막 점수</th>
+                <th style="text-align:left; padding:8px; width:52px;">세트</th>
+                <th style="text-align:left; padding:8px; width:52px;">게임</th>
+                <th style="text-align:left; padding:8px; width:108px;">마지막 점수</th>
                 <th style="text-align:left; padding:8px;">비고</th>
               </tr>
             </thead>
@@ -3454,15 +3540,53 @@ async function initSupabase() {
 async function loadRecentRecords(limit = 10) {
   if (!supabase) await initSupabase();
 
+  const fetchLimit = Math.max(limit * 4, 40);
   const { data, error } = await supabase
     .from("match_records")
     .select("id, created_at, app_version, data")
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(fetchLimit);
 
   if (error) throw error;
-  console.log("✅ recent records:", data);
-  return data;
+
+  const rows = Array.isArray(data)
+    ? data.map((row)=>{
+        const parsed = safeParseObject(row?.data) || row?.data || {};
+        return Object.assign({}, row, { data: parsed });
+      })
+    : [];
+
+  const grouped = new Map();
+  for(const row of rows){
+    const key = getRowMatchKey(row) || `id:${row?.id || Math.random()}`;
+    const existing = grouped.get(key);
+    if(!existing){
+      grouped.set(key, row);
+      continue;
+    }
+
+    const existingPhoto = getSavedCompletionPhotoFromRow(existing);
+    const incomingPhoto = getSavedCompletionPhotoFromRow(row);
+
+    if(existingPhoto && !incomingPhoto){
+      continue;
+    }
+    if(!existingPhoto && incomingPhoto){
+      grouped.set(key, mergeCompletionPhotoIntoRow(existing, row));
+      continue;
+    }
+    if(existingPhoto && incomingPhoto){
+      grouped.set(key, mergeCompletionPhotoIntoRow(existing, row));
+      continue;
+    }
+  }
+
+  const merged = Array.from(grouped.values())
+    .sort((a,b)=>new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime())
+    .slice(0, limit);
+
+  console.log("✅ recent records:", merged);
+  return merged;
 }
 
 window.addEventListener('load', async ()=>{
