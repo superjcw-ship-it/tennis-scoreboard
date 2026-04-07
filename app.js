@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.39";
+  const APP_VERSION = "v22.24.40";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -755,8 +755,18 @@ function debounce(fn, ms=120){
     return photo;
   }
 
+  function pickSingleRow(data){
+    if(Array.isArray(data)) return data[0] || null;
+    return data || null;
+  }
+
+
   async function persistCompletionPhotoToSavedRecord(){
-    if(!_completedSavedRowId || !_pendingCompletionPhoto) return null;
+    if(!_pendingCompletionPhoto) return null;
+    if(!_completedSavedRowId){
+      await ensureCompletedMatchSaved();
+    }
+    if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
     const record = buildRecordPayload("completed_photo_update");
@@ -767,11 +777,10 @@ function debounce(fn, ms=120){
         data: record
       })
       .eq("id", _completedSavedRowId)
-      .select("id, data")
-      .single();
+      .select("id, data");
 
     if(error) throw error;
-    return data;
+    return pickSingleRow(data);
   }
 
   function openPhotoViewer(photo){
@@ -857,10 +866,10 @@ function debounce(fn, ms=120){
     const { data, error } = await supabase
       .from("match_records")
       .insert({ app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"), data: record })
-      .select("id, data")
-      .single();
+      .select("id, data");
     if (error) throw error;
-    return { rowId: data?.id || null, record: data?.data || record };
+    const row = pickSingleRow(data);
+    return { rowId: row?.id || null, record: row?.data || record };
   }
 
   async function ensureCompletedMatchSaved(){
@@ -987,7 +996,7 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
-          if(state?.winner && _completedSavedRowId){
+          if(state?.winner){
             await persistCompletionPhotoToSavedRecord();
           }
         }catch(err){
