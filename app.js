@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.55";
+  const APP_VERSION = "v22.24.38";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -659,106 +659,9 @@ function debounce(fn, ms=120){
     updateMatchResultPhotoUI();
   }
 
-  function _maybeParseJson(value){
-    if(value == null) return value;
-    if(typeof value !== "string") return value;
-    const t = value.trim();
-    if(!t) return null;
-    if((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))){
-      try{ return JSON.parse(t); }catch(_e){ return value; }
-    }
-    return value;
-  }
-
-  function _normalizeCompletionPhotoCandidate(candidate){
-    const c = _maybeParseJson(candidate);
-    if(!c) return null;
-    if(typeof c === "string"){
-      if(c.startsWith("data:image/")){
-        return {
-          name: `match-photo-${Date.now()}.jpg`,
-          mimeType: c.slice(5, c.indexOf(';')) || 'image/jpeg',
-          sizeBytes: Math.round((c.length * 3) / 4),
-          width: null,
-          height: null,
-          dataUrl: c,
-          capturedAt: null
-        };
-      }
-      return null;
-    }
-    const dataUrl = c.dataUrl || c.url || c.src || c.base64 || null;
-    if(!dataUrl || typeof dataUrl !== "string") return null;
-    return {
-      name: c.name || 'match-photo.jpg',
-      mimeType: c.mimeType || 'image/jpeg',
-      sizeBytes: c.sizeBytes ?? null,
-      width: c.width ?? null,
-      height: c.height ?? null,
-      dataUrl,
-      capturedAt: c.capturedAt || null
-    };
-  }
-
-  function _findCompletionPhotoDeep(root, seen=new Set()){
-    if(root == null) return null;
-    const parsedRoot = _maybeParseJson(root);
-    if(parsedRoot !== root) return _findCompletionPhotoDeep(parsedRoot, seen);
-    if(typeof root === "string"){
-      return _normalizeCompletionPhotoCandidate(root);
-    }
-    if(typeof root !== "object") return null;
-    if(seen.has(root)) return null;
-    seen.add(root);
-
-    const directCandidates = [
-      root,
-      root.completionPhoto,
-      root.media?.completionPhoto,
-      root.state?.media?.completionPhoto,
-      root.state?.completionPhoto,
-      root.data?.media?.completionPhoto,
-      root.data?.state?.media?.completionPhoto,
-      root.data?.completionPhoto
-    ];
-
-    for(const candidate of directCandidates){
-      const normalized = _normalizeCompletionPhotoCandidate(candidate);
-      if(normalized?.dataUrl) return normalized;
-    }
-
-    for(const value of Object.values(root)){
-      const nested = _findCompletionPhotoDeep(value, seen);
-      if(nested?.dataUrl) return nested;
-    }
-    return null;
-  }
-
   function getSavedCompletionPhotoFromRow(row){
-    const rawData = _maybeParseJson(row?.data) || {};
-    const d = (rawData && typeof rawData === 'object') ? rawData : {};
-    const s = _maybeParseJson(d?.state) || {};
-    const media = _maybeParseJson(d?.media) || {};
-    const stateMedia = _maybeParseJson(s?.media) || {};
-
-    const candidates = [
-      media?.completionPhoto,
-      stateMedia?.completionPhoto,
-      s?.completionPhoto,
-      d?.completionPhoto,
-      row?.media?.completionPhoto,
-      row?.completionPhoto,
-      d,
-      s,
-      rawData,
-      row
-    ];
-
-    for(const candidate of candidates){
-      const normalized = _findCompletionPhotoDeep(candidate);
-      if(normalized?.dataUrl) return normalized;
-    }
-    return null;
+    const d = row?.data || {};
+    return d?.media?.completionPhoto || null;
   }
 
   function updateMatchResultPhotoUI(){
@@ -847,11 +750,7 @@ function debounce(fn, ms=120){
   }
 
   async function persistCompletionPhotoToSavedRecord(){
-    if(!_pendingCompletionPhoto) return null;
-    if(!_completedSavedRowId){
-      await ensureCompletedMatchSaved();
-    }
-    if(!_completedSavedRowId) return null;
+    if(!_completedSavedRowId || !_pendingCompletionPhoto) return null;
     if (!supabase) await initSupabase();
 
     const record = buildRecordPayload("completed_photo_update");
@@ -865,9 +764,7 @@ function debounce(fn, ms=120){
       .select("id, data");
 
     if(error) throw error;
-    const row = pickSingleRow(data);
-    if(row?.id) _completedSavedRowId = row.id;
-    return row;
+    return pickSingleRow(data);
   }
 
   function openPhotoViewer(photo){
@@ -1080,8 +977,7 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
-          if(state?.winner){
-            await ensureCompletedMatchSaved();
+          if(state?.winner && _completedSavedRowId){
             await persistCompletionPhotoToSavedRecord();
           }
         }catch(err){
@@ -2721,26 +2617,30 @@ function checkWinTiebreak(){
       <div style="font-size:16px; font-weight:800; margin-bottom:8px;">
         ${leftName}  vs  ${rightName}
       </div>
-  
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-        <span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px;">완료</span>
+
+      <div style="display:flex; justify-content:center; margin-bottom:8px;">
+        <span style="padding:3px 10px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); font-size:12px; font-weight:800;">완료</span>
+      </div>
+
+      ${photoHtml}
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:0 0 12px;">
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">NO-AD ${noAd}</span>
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">TB ${tbOn}</span>
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
       </div>
-  
+
       <div style="line-height:1.6; color: rgba(255,255,255,.88);">
         <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
         <div style="margin-top:4px;"><b>세트 상세</b>: ${setLines}</div>
         <div style="margin-top:6px;"><b>승자</b>: ${winner}</div>
         ${gameHistoryHtml}
-        ${photoHtml}
         <div style="margin-top:6px; font-size:13px; color: rgba(255,255,255,.70);">
           저장시간: ${savedAt}<br/>
           row 생성시간: ${created}
         </div>
       </div>
-  
+
       <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
         <button id="cloudSummaryCopyBtn" style="
           border-radius:10px; border:1px solid rgba(255,255,255,.12);
