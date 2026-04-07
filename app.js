@@ -856,6 +856,7 @@ function debounce(fn, ms=120){
         meta.textContent = `${photo.name || 'captured-photo.jpg'}${dimText}${sizeText}${saveText}`;
         removeBtn.style.display = "inline-flex";
         if(saveBtn){
+          saveBtn.style.display = "inline-flex";
           saveBtn.disabled = false;
           saveBtn.textContent = saved ? "사진 저장 완료" : "사진 저장";
         }
@@ -868,6 +869,7 @@ function debounce(fn, ms=120){
         meta.textContent = "";
         removeBtn.style.display = "none";
         if(saveBtn){
+          saveBtn.style.display = "inline-flex";
           saveBtn.disabled = true;
           saveBtn.textContent = "사진 저장";
         }
@@ -3064,12 +3066,15 @@ function checkWinTiebreak(){
         <span style="padding:2px 8px; border-radius:999px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.10); font-size:12px;">SWAP ${swapped}</span>
       </div>
   
+      
+      ${photoHtml}
+
       <div style="line-height:1.6; color: rgba(255,255,255,.88);">
         <div><b>세트</b>: ${setScore} / <b>게임</b>: ${gameScore}</div>
         <div style="margin-top:4px;"><b>세트 상세</b>: ${setLines}</div>
         <div style="margin-top:6px;"><b>승자</b>: ${winner}</div>
         ${gameHistoryHtml}
-        ${photoHtml}
+        
         <div style="margin-top:6px; font-size:13px; color: rgba(255,255,255,.70);">
           저장시간: ${savedAt}<br/>
           row 생성시간: ${created}
