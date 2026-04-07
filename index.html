@@ -270,6 +270,11 @@
       cursor:pointer;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      line-height:1.2;
     }
     .btnPrimary{
       background: rgba(61,220,132,.95);
@@ -633,17 +638,19 @@
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
-      margin-top: 12px;
+      margin-top: 14px;
+      position: sticky;
+      bottom: -14px;
+      padding-top: 12px;
+      padding-bottom: 4px;
+      background: linear-gradient(180deg, rgba(18,18,20,0), rgba(18,18,20,.92) 20%, rgba(18,18,20,.98));
     }
-    
+
     .resultBtnRow .btn,
     .resultBtnRow .badge{
       width: 100%;
-      display:inline-flex;
-      align-items:center;
+      min-height: 46px;
       justify-content: center;
-      text-align:center;
-      white-space:nowrap;
     }
     .resultPhotoBox{
       margin-top: 10px;
@@ -671,18 +678,14 @@
       line-height: 1.45;
     }
     .resultPhotoActions{
-      display:flex;
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
       gap:8px;
-      flex-wrap:wrap;
       margin-top:10px;
-      align-items:center;
     }
     .resultPhotoActions .btn{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      line-height:1;
-      text-align:center;
+      width:100%;
+      min-width:0;
     }
     .resultPhotoPreviewWrap{
       display:none;
@@ -693,8 +696,8 @@
     }
     .resultPhotoPreview{
       width:100%;
-      max-height:220px;
-      object-fit:cover;
+      max-height:min(30vh, 220px);
+      object-fit:contain;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.10);
       background:#0f0f12;
@@ -705,25 +708,35 @@
       color:var(--muted);
       word-break:break-all;
     }
-    
+
+    #matchResultModal .modalSheet{
+      width: min(720px, calc(100% - 16px));
+      max-height: calc(var(--appH, 100vh) - 12px);
+    }
+    #matchResultModal .modalBody{
+      max-height: calc(var(--appH, 100vh) - 88px);
+      padding-bottom: 10px;
+    }
+
     @media (max-width: 520px){
       .resultWinText{
         font-size: 24px;
       }
       .resultBtnRow{
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        grid-template-columns: 1fr;
       }
-      .resultBtnRow .btn{
-        min-width:0;
-        padding: 0 12px;
-        font-size: 14px;
+      .resultPhotoActions{
+        grid-template-columns: 1fr;
       }
     }
       @media (orientation: portrait){
         .modalSheet{
           width: min(92vw, 520px);
           max-height: calc(var(--appH, 100vh) - 40px);
+        }
+        #matchResultModal .modalSheet{
+          width: min(94vw, 560px);
+          max-height: calc(var(--appH, 100vh) - 12px);
         }
       }  
     .modalHeader{
@@ -1455,7 +1468,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.42</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.45</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1562,14 +1575,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.42"></script>
+  <script src="app.js?v=v22.24.37"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.42").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.37").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.42</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.37</div>
 
 </body>
 </html>
