@@ -699,6 +699,27 @@
       padding: 0 10px;
       white-space: nowrap;
     }
+    .resultPhotoSaveRow{
+      margin-top:8px;
+    }
+    .resultPhotoSaveRow .btn{
+      width:100%;
+      min-height:44px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+    }
+    .resultPhotoSaveRow .btn[disabled]{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+    .resultPhotoSaveStatus{
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.45;
+    }
     .resultPhotoPreviewWrap{
       display:none;
       margin-top:10px;
@@ -708,7 +729,7 @@
     }
     .resultPhotoPreview{
       width:100%;
-      max-height:min(24vh, 180px);
+      max-height:min(22vh, 160px);
       object-fit:contain;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.10);
@@ -731,6 +752,7 @@
       display:flex;
       flex-direction:column;
       gap:10px;
+      overflow:auto;
     }
 
     @media (max-width: 520px){
@@ -738,7 +760,8 @@
         font-size: 24px;
       }
       .resultBtnRow .btn,
-      .resultPhotoActions .btn{
+      .resultPhotoActions .btn,
+      .resultPhotoSaveRow .btn{
         min-height: 42px;
         font-size: 13px;
         padding: 0 8px;
@@ -751,21 +774,33 @@
         }
         #matchResultModal .modalSheet{
           width: min(94vw, 560px);
-          max-height: calc(var(--appH, 100vh) - 10px);
+          top: 8px;
+          bottom: 8px;
+          max-height: none;
+          transform: translateX(-50%);
         }
         #matchResultModal .modalBody{
-          max-height: calc(var(--appH, 100vh) - 74px);
+          max-height: calc(var(--appH, 100vh) - 84px);
         }
         .resultPhotoBox{
           padding: 10px;
         }
         .resultPhotoPreview{
-          max-height: min(20vh, 150px);
+          max-height: min(16vh, 110px);
         }
       }  
       @media (orientation: landscape){
+        #matchResultModal .modalSheet{
+          top: 8px;
+          bottom: 8px;
+          max-height: none;
+          transform: translateX(-50%);
+        }
+        #matchResultModal .modalBody{
+          max-height: calc(var(--appH, 100vh) - 90px);
+        }
         .resultPhotoPreview{
-          max-height: min(28vh, 200px);
+          max-height: min(20vh, 140px);
         }
       }
     .modalHeader{
@@ -1472,11 +1507,15 @@
                     <div class="resultPhotoHint">코트/점수판/선수 사진 등을 선택해서 기록에 함께 남길 수 있습니다.</div>
                   </div>
                 </div>
-                <input id="matchResultPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;" />
+                <input id="matchResultPhotoInput" type="file" accept="image/*" style="display:none;" />
                 <div class="resultPhotoActions">
                   <button id="takeMatchResultPhotoBtn" class="btn" type="button">사진 촬영/선택</button>
                   <button id="removeMatchResultPhotoBtn" class="btn" type="button" style="display:none;">사진 제거</button>
                 </div>
+                <div class="resultPhotoSaveRow">
+                  <button id="saveMatchResultPhotoBtn" class="btn btnPrimary" type="button" disabled>사진 저장</button>
+                </div>
+                <div id="matchResultPhotoSaveStatus" class="resultPhotoSaveStatus">사진을 촬영하거나 선택한 뒤 저장할 수 있습니다.</div>
                 <div id="matchResultPhotoPreviewWrap" class="resultPhotoPreviewWrap">
                   <img id="matchResultPhotoPreview" class="resultPhotoPreview" alt="경기 완료 사진 미리보기" />
                   <div id="matchResultPhotoMeta" class="resultPhotoMeta"></div>
@@ -1497,7 +1536,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.45</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.47</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
