@@ -636,14 +636,9 @@
     
     .resultBtnRow{
       display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 10px;
       margin-top: 14px;
-      position: sticky;
-      bottom: -14px;
-      padding-top: 12px;
-      padding-bottom: 4px;
-      background: linear-gradient(180deg, rgba(18,18,20,0), rgba(18,18,20,.92) 20%, rgba(18,18,20,.98));
     }
 
     .resultBtnRow .btn,
@@ -686,6 +681,24 @@
     .resultPhotoActions .btn{
       width:100%;
       min-width:0;
+      min-height:46px;
+      padding:10px 8px;
+      white-space:normal;
+      line-height:1.2;
+      justify-content:center;
+    }
+    .resultPhotoSaveRow{
+      display:grid;
+      grid-template-columns:minmax(0,1fr);
+      gap:8px;
+      margin-top:10px;
+    }
+    .resultPhotoSaveStatus{
+      min-height:18px;
+      text-align:center;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
     }
     .resultPhotoPreviewWrap{
       display:none;
@@ -715,18 +728,51 @@
     }
     #matchResultModal .modalBody{
       max-height: calc(var(--appH, 100vh) - 88px);
-      padding-bottom: 10px;
+      padding-bottom: 14px;
+    }
+    #takeMatchResultPhotoBtn{
+      background: rgba(59,130,246,.94);
+      border-color: rgba(59,130,246,.94);
+      color:#eef6ff;
+    }
+    #removeMatchResultPhotoBtn{
+      background: rgba(255,77,77,.94);
+      border-color: rgba(255,77,77,.94);
+      color:#2b0000;
+      align-items:center;
+      justify-content:center;
+    }
+    #saveMatchResultPhotoBtn{
+      background: rgba(61,220,132,.94);
+      border-color: rgba(61,220,132,.94);
+      color:#06210f;
+    }
+    #saveMatchResultPhotoBtn:disabled{
+      opacity:.58;
+      cursor:not-allowed;
     }
 
     @media (max-width: 520px){
       .resultWinText{
         font-size: 24px;
       }
-      .resultBtnRow{
-        grid-template-columns: 1fr;
-      }
+      .resultBtnRow,
       .resultPhotoActions{
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0,1fr));
+        gap:8px;
+      }
+      .resultBtnRow .btn,
+      .resultPhotoActions .btn,
+      #saveMatchResultPhotoBtn{
+        min-height:44px;
+        padding:9px 6px;
+        font-size:13px;
+      }
+      .resultPhotoPreview{
+        max-height:min(24vh, 170px);
+      }
+      #matchResultModal .modalBody{
+        padding-bottom: 12px;
       }
     }
       @media (orientation: portrait){
@@ -1452,6 +1498,10 @@
                   <img id="matchResultPhotoPreview" class="resultPhotoPreview" alt="경기 완료 사진 미리보기" />
                   <div id="matchResultPhotoMeta" class="resultPhotoMeta"></div>
                 </div>
+                <div class="resultPhotoSaveRow">
+                  <button id="saveMatchResultPhotoBtn" class="btn btnPrimary" type="button" style="display:none;">사진 저장</button>
+                  <div id="matchResultPhotoSaveStatus" class="resultPhotoSaveStatus">사진은 선택사항입니다. 선택 후 저장하면 경기 기록에 함께 남습니다.</div>
+                </div>
               </div>
 
               <div class="resultBtnRow">
@@ -1468,7 +1518,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.50</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.45</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1575,14 +1625,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.50"></script>
+  <script src="app.js?v=v22.24.37"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.50").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.37").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.50</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.37</div>
 
 </body>
 </html>
