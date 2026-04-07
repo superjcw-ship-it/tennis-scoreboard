@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.46');
+    const v = (window.__TS_APP_VERSION || 'v22.24.47');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.46";
+  const APP_VERSION = "v22.24.47";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -643,10 +643,15 @@ function debounce(fn, ms=120){
   let _completedSavedKey = null;
   let _completedSavedRowId = null;
   let _pendingCompletionPhoto = null;
+  let _pendingCompletionPhotoSaved = false;
   const COMPLETION_PHOTO_CACHE_KEY = "tennis_completion_photo_cache_v1";
 
   function getPendingCompletionPhoto(){
     return _pendingCompletionPhoto ? JSON.parse(JSON.stringify(_pendingCompletionPhoto)) : null;
+  }
+
+  function isPendingCompletionPhotoSaved(){
+    return !!(_pendingCompletionPhoto && _pendingCompletionPhotoSaved);
   }
 
   function getCompletionPhotoCache(){
@@ -680,6 +685,7 @@ function debounce(fn, ms=120){
 
   function clearPendingCompletionPhoto(){
     _pendingCompletionPhoto = null;
+    _pendingCompletionPhotoSaved = false;
     clearCompletionPhotoCache();
     try{
       const input = document.getElementById("matchResultPhotoInput");
@@ -690,11 +696,13 @@ function debounce(fn, ms=120){
 
   function setPendingCompletionPhoto(photo){
     _pendingCompletionPhoto = photo ? JSON.parse(JSON.stringify(photo)) : null;
+    _pendingCompletionPhotoSaved = false;
     if(_pendingCompletionPhoto){
       setCompletionPhotoCache({
         photo: _pendingCompletionPhoto,
         rowId: _completedSavedRowId || null,
         matchKey: getCompletedMatchSaveKey() || null,
+        saved: false,
         synced: false,
         updatedAt: new Date().toISOString()
       });
@@ -834,20 +842,38 @@ function debounce(fn, ms=120){
       const img = document.getElementById("matchResultPhotoPreview");
       const meta = document.getElementById("matchResultPhotoMeta");
       const removeBtn = document.getElementById("removeMatchResultPhotoBtn");
+      const saveBtn = document.getElementById("saveMatchResultPhotoBtn");
+      const statusEl = document.getElementById("matchResultPhotoSaveStatus");
       const photo = getPendingCompletionPhoto();
+      const saved = isPendingCompletionPhotoSaved();
       if(!wrap || !img || !meta || !removeBtn) return;
       if(photo?.dataUrl){
         wrap.classList.add("hasPhoto");
         img.src = photo.dataUrl;
         const sizeText = Number.isFinite(photo.sizeBytes) ? ` · ${Math.round(photo.sizeBytes/1024)}KB` : "";
         const dimText = (photo.width && photo.height) ? ` · ${photo.width}×${photo.height}` : "";
-        meta.textContent = `${photo.name || 'captured-photo.jpg'}${dimText}${sizeText}`;
+        const saveText = saved ? " · 저장 완료" : " · 저장 전";
+        meta.textContent = `${photo.name || 'captured-photo.jpg'}${dimText}${sizeText}${saveText}`;
         removeBtn.style.display = "inline-flex";
+        if(saveBtn){
+          saveBtn.disabled = false;
+          saveBtn.textContent = saved ? "사진 저장 완료" : "사진 저장";
+        }
+        if(statusEl){
+          statusEl.textContent = saved ? "완료 사진이 경기 기록에 저장되었습니다." : "사진 미리보기 상태입니다. '사진 저장'을 눌러야 경기 기록에 저장됩니다.";
+        }
       }else{
         wrap.classList.remove("hasPhoto");
         img.removeAttribute("src");
         meta.textContent = "";
         removeBtn.style.display = "none";
+        if(saveBtn){
+          saveBtn.disabled = true;
+          saveBtn.textContent = "사진 저장";
+        }
+        if(statusEl){
+          statusEl.textContent = "사진을 촬영하거나 선택한 뒤 저장할 수 있습니다.";
+        }
       }
     }catch(_e){}
   }
@@ -913,10 +939,11 @@ function debounce(fn, ms=120){
     return data || null;
   }
 
-  function buildPhotoMergedRecord(baseRecord){
+  function buildPhotoMergedRecord(baseRecord, explicitPhoto=null){
     const base = _maybeParseJson(baseRecord) || {};
     const record = (base && typeof base === 'object') ? JSON.parse(JSON.stringify(base)) : {};
-    const photo = getPendingCompletionPhoto() || getCompletionPhotoCache()?.photo || null;
+    const cache = getCompletionPhotoCache() || null;
+    const photo = explicitPhoto || getPendingCompletionPhoto() || (((cache?.saved || cache?.synced) && cache?.photo?.dataUrl) ? cache.photo : null);
     if(!photo?.dataUrl) return record;
     if(!record.media || typeof record.media !== 'object') record.media = {};
     record.media.completionPhoto = JSON.parse(JSON.stringify(photo));
@@ -935,7 +962,7 @@ function debounce(fn, ms=120){
   async function repairCompletionPhotoForRow(row){
     try{
       const cache = getCompletionPhotoCache();
-      if(!row?.id || !cache?.photo?.dataUrl) return row;
+      if(!row?.id || !cache?.photo?.dataUrl || !(cache?.saved || cache?.synced)) return row;
       if(cache.rowId && String(cache.rowId) !== String(row.id)) return row;
       const existing = getSavedCompletionPhotoFromRow(row);
       if(existing?.dataUrl) return row;
@@ -963,7 +990,8 @@ function debounce(fn, ms=120){
     if(!_pendingCompletionPhoto && cachePhoto?.dataUrl){
       _pendingCompletionPhoto = JSON.parse(JSON.stringify(cachePhoto));
     }
-    if(!_pendingCompletionPhoto) return null;
+    const currentPhoto = getPendingCompletionPhoto();
+    if(!currentPhoto?.dataUrl) return null;
     if(!_completedSavedRowId){
       await ensureCompletedMatchSaved();
     }
@@ -972,7 +1000,7 @@ function debounce(fn, ms=120){
 
     const latestRow = await loadRecordById(_completedSavedRowId).catch(()=>null);
     const latestRecord = _maybeParseJson(latestRow?.data) || null;
-    const mergedRecord = buildPhotoMergedRecord(latestRecord || buildRecordPayload('completed_photo_update'));
+    const mergedRecord = buildPhotoMergedRecord(latestRecord || buildRecordPayload('completed_photo_update'), currentPhoto);
 
     const { data, error } = await supabase
       .from("match_records")
@@ -986,13 +1014,16 @@ function debounce(fn, ms=120){
     if(error) throw error;
     const row = pickSingleRow(data) || latestRow || null;
     if(row?.id) _completedSavedRowId = row.id;
+    _pendingCompletionPhotoSaved = true;
     setCompletionPhotoCache({
       photo: getPendingCompletionPhoto(),
       rowId: _completedSavedRowId || null,
       matchKey: getCompletedMatchSaveKey() || null,
+      saved: true,
       synced: true,
       updatedAt: new Date().toISOString()
     });
+    updateMatchResultPhotoUI();
     return row;
   }
 
@@ -1055,7 +1086,7 @@ function debounce(fn, ms=120){
     if(isCompleted && !snapState.completedAt) snapState.completedAt = now;
 
     const media = {};
-    const completionPhoto = getPendingCompletionPhoto();
+    const completionPhoto = (isCompleted && isPendingCompletionPhotoSaved()) ? getPendingCompletionPhoto() : null;
     if(completionPhoto && isCompleted){
       media.completionPhoto = completionPhoto;
       if(!snapState.media || typeof snapState.media !== "object") snapState.media = {};
@@ -1167,6 +1198,7 @@ function debounce(fn, ms=120){
     const regameBtn = document.getElementById("regameBtn");
     const setupBtn = document.getElementById("goSetupAfterMatchBtn");
     const takePhotoBtn = document.getElementById("takeMatchResultPhotoBtn");
+    const savePhotoBtn = document.getElementById("saveMatchResultPhotoBtn");
     const removePhotoBtn = document.getElementById("removeMatchResultPhotoBtn");
     const photoInput = document.getElementById("matchResultPhotoInput");
 
@@ -1204,6 +1236,21 @@ function debounce(fn, ms=120){
         clearPendingCompletionPhoto();
       });
     }
+    if(savePhotoBtn && !savePhotoBtn.__matchResultWired){
+      savePhotoBtn.__matchResultWired = true;
+      savePhotoBtn.addEventListener("click", async (e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        try{
+          if(!getPendingCompletionPhoto()?.dataUrl) return;
+          await ensureCompletedMatchSaved();
+          await persistCompletionPhotoToSavedRecord();
+        }catch(err){
+          console.error(err);
+          alert("사진 저장 실패: " + (err?.message || err));
+        }
+      });
+    }
     if(photoInput && !photoInput.__matchResultWired){
       photoInput.__matchResultWired = true;
       photoInput.addEventListener("change", async ()=>{
@@ -1211,10 +1258,6 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
-          if(state?.winner){
-            await ensureCompletedMatchSaved();
-            await persistCompletionPhotoToSavedRecord();
-          }
         }catch(err){
           console.error(err);
           alert("사진 처리 실패: " + (err?.message || err));
@@ -2786,7 +2829,7 @@ function checkWinTiebreak(){
     }
     if(!completionPhoto?.dataUrl){
       const cache = getCompletionPhotoCache();
-      if(cache?.photo?.dataUrl && (!summaryRow?.id || !cache.rowId || String(cache.rowId) === String(summaryRow.id))){
+      if((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && (!summaryRow?.id || !cache.rowId || String(cache.rowId) === String(summaryRow.id))){
         completionPhoto = cache.photo;
       }
     }
@@ -3030,14 +3073,14 @@ function checkWinTiebreak(){
     return `
       <details style="margin-top:12px;">
         <summary style="cursor:pointer; user-select:none; color:#eaf3ff;">
-          게임 기록 보기 (40:30 포함)
+          게임 기록 보기
         </summary>
         <div style="margin-top:10px; overflow:auto; max-height:260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; min-width:280px; border-collapse:collapse; table-layout:fixed; font-size:11.5px;">
+          <table style="width:100%; min-width:240px; border-collapse:collapse; table-layout:fixed; font-size:11px;">
             <colgroup>
-              <col style="width:34px;" />
-              <col style="width:34px;" />
-              <col style="width:64px;" />
+              <col style="width:30px;" />
+              <col style="width:30px;" />
+              <col style="width:56px;" />
               <col style="width:auto;" />
             </colgroup>
             <thead>
