@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.47";
+  const APP_VERSION = "v22.24.49";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -2744,7 +2744,10 @@ function checkWinTiebreak(){
     const keep = new Map();
     const passthrough = [];
     const score = (row)=>{
-      const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl;
+      const key = getCloudRowMatchKey(row);
+      const cache = getCompletionPhotoCache();
+      const cachePhoto = !!((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && key && cache?.matchKey && String(cache.matchKey) === String(key));
+      const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl || cachePhoto;
       const t = row?.created_at ? new Date(row.created_at).getTime() : 0;
       return { photo, t };
     };
@@ -2767,6 +2770,21 @@ function checkWinTiebreak(){
       const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
       return bt - at;
     });
+  }
+
+  async function findRecentPhotoRowForMatchKey(matchKey, limit = 80){
+    if(!matchKey) return null;
+    const rows = await loadRecentRecords(limit);
+    const same = (rows || []).filter((row)=> String(getCloudRowMatchKey(row) || '') === String(matchKey));
+    let best = null;
+    same.forEach((row)=>{
+      if(!getSavedCompletionPhotoFromRow(row)?.dataUrl) return;
+      if(!best){ best = row; return; }
+      const bt = best?.created_at ? new Date(best.created_at).getTime() : 0;
+      const rt = row?.created_at ? new Date(row.created_at).getTime() : 0;
+      if(rt >= bt) best = row;
+    });
+    return best;
   }
 
   async function openCloudLoad(){
@@ -2924,10 +2942,23 @@ function checkWinTiebreak(){
         console.warn('summary latest fetch failed', err);
       }
     }
+    const summaryMatchKey = getCloudRowMatchKey(summaryRow);
     if(!completionPhoto?.dataUrl){
       const cache = getCompletionPhotoCache();
-      if((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && (!summaryRow?.id || !cache.rowId || String(cache.rowId) === String(summaryRow.id))){
+      const cacheMatchesRowId = !!(summaryRow?.id && cache?.rowId && String(cache.rowId) === String(summaryRow.id));
+      const cacheMatchesMatchKey = !!(summaryMatchKey && cache?.matchKey && String(cache.matchKey) === String(summaryMatchKey));
+      if((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && (cacheMatchesRowId || cacheMatchesMatchKey || (!summaryRow?.id && !summaryMatchKey))){
         completionPhoto = cache.photo;
+      }
+    }
+    if(!completionPhoto?.dataUrl && summaryMatchKey){
+      try{
+        const photoRow = await findRecentPhotoRowForMatchKey(summaryMatchKey, 80);
+        if(photoRow){
+          completionPhoto = getSavedCompletionPhotoFromRow(photoRow);
+        }
+      }catch(err){
+        console.warn('summary photo row lookup failed', err);
       }
     }
 
