@@ -659,19 +659,43 @@ function debounce(fn, ms=120){
     updateMatchResultPhotoUI();
   }
 
-  function getSavedCompletionPhotoFromRow(row){
-    const d = row?.data || {};
-    const s = d?.state || {};
-    const candidates = [
-      d?.media?.completionPhoto,
-      d?.completionPhoto,
-      s?.media?.completionPhoto,
-      s?.completionPhoto,
-      row?.media?.completionPhoto
-    ];
-    for(const photo of candidates){
-      if(photo?.dataUrl) return photo;
+  function _maybeParseJsonObject(value){
+    if(!value) return null;
+    if(typeof value === "object") return value;
+    if(typeof value === "string"){
+      try{
+        const parsed = JSON.parse(value);
+        return (parsed && typeof parsed === "object") ? parsed : null;
+      }catch(_e){
+        return null;
+      }
     }
+    return null;
+  }
+
+  function getSavedCompletionPhotoFromRow(row){
+    const queue = [row];
+    const seen = new Set();
+
+    while(queue.length){
+      const raw = queue.shift();
+      const cur = _maybeParseJsonObject(raw);
+      if(!cur || seen.has(cur)) continue;
+      seen.add(cur);
+
+      const direct = cur?.completionPhoto;
+      if(direct?.dataUrl) return direct;
+
+      const mediaPhoto = cur?.media?.completionPhoto;
+      if(mediaPhoto?.dataUrl) return mediaPhoto;
+
+      const nestedKeys = ["data", "state", "record", "payload", "match", "snapshot"];
+      for(const key of nestedKeys){
+        const nextVal = cur?.[key];
+        if(nextVal) queue.push(nextVal);
+      }
+    }
+
     return null;
   }
 
@@ -870,6 +894,18 @@ function debounce(fn, ms=120){
     if (error) throw error;
     const row = pickSingleRow(data);
     return { rowId: row?.id || null, record: row?.data || record };
+  }
+
+  async function fetchRecordById(recordId){
+    if(!recordId) return null;
+    if (!supabase) await initSupabase();
+    const { data, error } = await supabase
+      .from("match_records")
+      .select("id, created_at, app_version, data")
+      .eq("id", recordId)
+      .limit(1);
+    if(error) throw error;
+    return pickSingleRow(data);
   }
 
   async function ensureCompletedMatchSaved(){
@@ -2551,10 +2587,24 @@ function checkWinTiebreak(){
       console.error(err);
       alert('불러오기 실패 (콘솔 확인)');
     }
-    function openMatchSummary(row){
-    const d = row?.data || {};
+    async function openMatchSummary(row){
+    let summaryRow = row;
+    let completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
+    if(!completionPhoto && row?.id){
+      try{
+        const freshRow = await fetchRecordById(row.id);
+        if(freshRow){
+          summaryRow = freshRow;
+          completionPhoto = getSavedCompletionPhotoFromRow(summaryRow) || completionPhoto;
+        }
+      }catch(err){
+        console.warn("cloud summary refetch failed:", err);
+      }
+    }
+
+    const d = summaryRow?.data || {};
     const s = d.state || {};
-    const created = row?.created_at ? new Date(row.created_at).toLocaleString() : '-';
+    const created = summaryRow?.created_at ? new Date(summaryRow.created_at).toLocaleString() : '-';
     const savedAt = d.saved_at ? new Date(d.saved_at).toLocaleString() : created;
   
     const mode = s.mode || d.match?.mode || 'unknown';
@@ -2580,7 +2630,6 @@ function checkWinTiebreak(){
     const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
     const gameHistoryHtml = buildGameHistoryHtml(s, d.undoHistory);
-    const completionPhoto = getSavedCompletionPhotoFromRow(row);
     const photoHtml = completionPhoto?.dataUrl
       ? `
         <div style="margin-top:12px;">
