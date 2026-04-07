@@ -699,6 +699,18 @@
       padding: 0 10px;
       white-space: nowrap;
     }
+    .photoPickBtn{
+      background: linear-gradient(180deg, rgba(37,99,235,.98), rgba(29,78,216,.96)) !important;
+      border-color: rgba(96,165,250,.95) !important;
+      color:#f8fbff !important;
+      box-shadow: 0 10px 22px rgba(37,99,235,.22);
+    }
+    .photoRemoveBtn{
+      background: linear-gradient(180deg, rgba(239,68,68,.98), rgba(220,38,38,.96)) !important;
+      border-color: rgba(248,113,113,.95) !important;
+      color:#fff6f6 !important;
+      box-shadow: 0 10px 22px rgba(220,38,38,.18);
+    }
     .resultPhotoSaveRow{
       margin-top:8px;
     }
@@ -729,7 +741,7 @@
     }
     .resultPhotoPreview{
       width:100%;
-      max-height:min(22vh, 160px);
+      max-height:min(20vh, 150px);
       object-fit:contain;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.10);
@@ -751,7 +763,7 @@
       padding-bottom: 12px;
       display:flex;
       flex-direction:column;
-      gap:10px;
+      gap:8px;
       overflow:auto;
     }
 
@@ -786,7 +798,7 @@
           padding: 10px;
         }
         .resultPhotoPreview{
-          max-height: min(16vh, 110px);
+          max-height: min(14vh, 96px);
         }
       }  
       @media (orientation: landscape){
@@ -1509,8 +1521,8 @@
                 </div>
                 <input id="matchResultPhotoInput" type="file" accept="image/*" style="display:none;" />
                 <div class="resultPhotoActions">
-                  <button id="takeMatchResultPhotoBtn" class="btn" type="button">사진 촬영/선택</button>
-                  <button id="removeMatchResultPhotoBtn" class="btn" type="button" style="display:none;">사진 제거</button>
+                  <button id="takeMatchResultPhotoBtn" class="btn photoPickBtn" type="button">사진 촬영/선택</button>
+                  <button id="removeMatchResultPhotoBtn" class="btn photoRemoveBtn" type="button" style="display:none;">사진 제거</button>
                 </div>
                 <div class="resultPhotoSaveRow">
                   <button id="saveMatchResultPhotoBtn" class="btn btnPrimary" type="button" disabled>사진 저장</button>
