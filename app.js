@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.42');
+    const v = (window.__TS_APP_VERSION || 'v22.24.43');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.42";
+  const APP_VERSION = "v22.24.43";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -659,73 +659,9 @@ function debounce(fn, ms=120){
     updateMatchResultPhotoUI();
   }
 
-  function _maybeParseJson(value){
-    if(typeof value !== "string") return value;
-    const s = value.trim();
-    if(!s) return value;
-    if((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))){
-      try{ return JSON.parse(s); }catch(_e){}
-    }
-    return value;
-  }
-
-  function _normalizeCompletionPhotoCandidate(candidate){
-    const c = _maybeParseJson(candidate);
-    if(!c) return null;
-    if(typeof c === "string"){
-      if(/^data:image\//i.test(c)) return { dataUrl:c, name:'match-photo.jpg' };
-      return null;
-    }
-    if(typeof c !== "object") return null;
-
-    const dataUrl = c.dataUrl || c.url || c.src || c.base64 || null;
-    if(!dataUrl || typeof dataUrl !== "string") return null;
-    return {
-      name: c.name || 'match-photo.jpg',
-      mimeType: c.mimeType || 'image/jpeg',
-      sizeBytes: c.sizeBytes ?? null,
-      width: c.width ?? null,
-      height: c.height ?? null,
-      dataUrl,
-      capturedAt: c.capturedAt || null
-    };
-  }
-
   function getSavedCompletionPhotoFromRow(row){
-    const rawData = _maybeParseJson(row?.data) || {};
-    const d = (rawData && typeof rawData === 'object') ? rawData : {};
-    const s = _maybeParseJson(d?.state) || {};
-    const media = _maybeParseJson(d?.media) || {};
-    const stateMedia = _maybeParseJson(s?.media) || {};
-
-    const candidates = [
-      media?.completionPhoto,
-      stateMedia?.completionPhoto,
-      s?.completionPhoto,
-      d?.completionPhoto,
-      row?.media?.completionPhoto,
-      row?.completionPhoto
-    ];
-
-    for(const candidate of candidates){
-      const normalized = _normalizeCompletionPhotoCandidate(candidate);
-      if(normalized?.dataUrl) return normalized;
-    }
-    return null;
-  }
-
-  async function loadRecordById(recordId){
-    if(!recordId) return null;
-    if (!supabase) await initSupabase();
-
-    const { data, error } = await supabase
-      .from("match_records")
-      .select("id, created_at, app_version, data")
-      .eq("id", recordId)
-      .limit(1);
-
-    if(error) throw error;
-    return pickSingleRow(data);
+    const d = row?.data || {};
+    return d?.media?.completionPhoto || null;
   }
 
   function updateMatchResultPhotoUI(){
@@ -814,7 +750,11 @@ function debounce(fn, ms=120){
   }
 
   async function persistCompletionPhotoToSavedRecord(){
-    if(!_completedSavedRowId || !_pendingCompletionPhoto) return null;
+    if(!_pendingCompletionPhoto) return null;
+    if(!_completedSavedRowId){
+      await ensureCompletedMatchSaved();
+    }
+    if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
     const record = buildRecordPayload("completed_photo_update");
@@ -828,7 +768,9 @@ function debounce(fn, ms=120){
       .select("id, data");
 
     if(error) throw error;
-    return pickSingleRow(data);
+    const row = pickSingleRow(data);
+    if(row?.id) _completedSavedRowId = row.id;
+    return row;
   }
 
   function openPhotoViewer(photo){
@@ -891,11 +833,7 @@ function debounce(fn, ms=120){
 
     const media = {};
     const completionPhoto = getPendingCompletionPhoto();
-    if(completionPhoto && isCompleted){
-      media.completionPhoto = completionPhoto;
-      if(!snapState.media || typeof snapState.media !== "object") snapState.media = {};
-      snapState.media.completionPhoto = JSON.parse(JSON.stringify(completionPhoto));
-    }
+    if(completionPhoto && isCompleted) media.completionPhoto = completionPhoto;
 
     return {
       schema_version: "match_v1",
@@ -1045,7 +983,8 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
-          if(state?.winner && _completedSavedRowId){
+          if(state?.winner){
+            await ensureCompletedMatchSaved();
             await persistCompletionPhotoToSavedRecord();
           }
         }catch(err){
@@ -1582,10 +1521,13 @@ function checkWinTiebreak(){
   function upsertSetGameHistory(setNo){
     state.setGameHistories = Array.isArray(state.setGameHistories) ? state.setGameHistories : [];
     const gh = JSON.parse(JSON.stringify(state.gameHistory || []));
-    const idx = state.setGameHistories.findIndex(x => x && x.set === setNo);
-    const obj = { set: setNo, gameHistory: gh };
-    if(idx >= 0) state.setGameHistories[idx] = obj;
-    else state.setGameHistories.push(obj);
+    // 세트별 기록은 배열 슬롯 기준으로만 유지 (중복 저장 방지)
+    state.setGameHistories[setNo - 1] = gh;
+    // 혹시 남아있는 구버전 객체형 항목은 같은 세트 번호 기준으로 제거
+    state.setGameHistories = state.setGameHistories.filter((item, idx) => {
+      if(idx === setNo - 1) return true;
+      return !(item && typeof item === "object" && !Array.isArray(item) && Number(item.set) === Number(setNo));
+    });
   } 
     
   function startNewSet(){
@@ -2542,7 +2484,7 @@ function checkWinTiebreak(){
             cursor: pointer;
           `;
   
-          const hasPhoto = !!getSavedCompletionPhotoFromRow(r)?.dataUrl;
+          const hasPhoto = !!(d?.media?.completionPhoto?.dataUrl);
           const tag = inProg
             ? `<span style="padding:2px 8px; border-radius:999px; background: rgba(59,130,246,.25); border:1px solid rgba(59,130,246,.5); color:#eaf3ff; font-size:12px;">진행중 · 복원가능</span>`
             : `<span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); color:#eafff6; font-size:12px;">완료</span>`;
@@ -2574,7 +2516,7 @@ function checkWinTiebreak(){
                 }
               }
             } else {
-              await openMatchSummary(r);
+              openMatchSummary(r);
             }
           });
   
@@ -2596,24 +2538,10 @@ function checkWinTiebreak(){
       console.error(err);
       alert('불러오기 실패 (콘솔 확인)');
     }
-    async function openMatchSummary(row){
-    let summaryRow = row;
-    let completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
-    if(!completionPhoto?.dataUrl && row?.id){
-      try{
-        const latestRow = await loadRecordById(row.id);
-        if(latestRow) {
-          summaryRow = latestRow;
-          completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
-        }
-      }catch(err){
-        console.warn('summary latest fetch failed', err);
-      }
-    }
-
-    const d = _maybeParseJson(summaryRow?.data) || {};
-    const s = _maybeParseJson(d.state) || {};
-    const created = summaryRow?.created_at ? new Date(summaryRow.created_at).toLocaleString() : '-';
+    function openMatchSummary(row){
+    const d = row?.data || {};
+    const s = d.state || {};
+    const created = row?.created_at ? new Date(row.created_at).toLocaleString() : '-';
     const savedAt = d.saved_at ? new Date(d.saved_at).toLocaleString() : created;
   
     const mode = s.mode || d.match?.mode || 'unknown';
@@ -2639,6 +2567,7 @@ function checkWinTiebreak(){
     const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
     const gameHistoryHtml = buildGameHistoryHtml(s, d.undoHistory);
+    const completionPhoto = getSavedCompletionPhotoFromRow(row);
     const photoHtml = completionPhoto?.dataUrl
       ? `
         <div style="margin-top:12px;">
