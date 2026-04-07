@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.37');
+    const v = (window.__TS_APP_VERSION || 'v22.24.38');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.37";
+  const APP_VERSION = "v22.24.38";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -744,6 +744,11 @@ function debounce(fn, ms=120){
     return photo;
   }
 
+  function pickSingleRow(data){
+    if(Array.isArray(data)) return data[0] || null;
+    return data || null;
+  }
+
   async function persistCompletionPhotoToSavedRecord(){
     if(!_completedSavedRowId || !_pendingCompletionPhoto) return null;
     if (!supabase) await initSupabase();
@@ -756,11 +761,10 @@ function debounce(fn, ms=120){
         data: record
       })
       .eq("id", _completedSavedRowId)
-      .select("id, data")
-      .single();
+      .select("id, data");
 
     if(error) throw error;
-    return data;
+    return pickSingleRow(data);
   }
 
   function openPhotoViewer(photo){
@@ -843,10 +847,10 @@ function debounce(fn, ms=120){
     const { data, error } = await supabase
       .from("match_records")
       .insert({ app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"), data: record })
-      .select("id, data")
-      .single();
+      .select("id, data");
     if (error) throw error;
-    return { rowId: data?.id || null, record: data?.data || record };
+    const row = pickSingleRow(data);
+    return { rowId: row?.id || null, record: row?.data || record };
   }
 
   async function ensureCompletedMatchSaved(){
