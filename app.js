@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.47');
+    const v = (window.__TS_APP_VERSION || 'v22.24.58');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.57";
+  const APP_VERSION = "v22.24.58";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -2881,9 +2881,9 @@ function checkWinTiebreak(){
           item.innerHTML = `
             <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
               <div style="font-weight:700; min-width:0; flex:1;">${leftName}  vs  ${rightName}</div>
-              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex:0 0 auto;">
-                ${tag}
+              <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; flex:0 0 auto; flex-wrap:nowrap;">
                 ${photoTag}
+                ${tag}
               </div>
             </div>
             <div style="margin-top:6px; color: rgba(255,255,255,.80); font-size:13px;">
