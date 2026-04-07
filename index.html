@@ -636,21 +636,26 @@
     
     .resultBtnRow{
       display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-top: 14px;
-      position: sticky;
-      bottom: -14px;
-      padding-top: 12px;
-      padding-bottom: 4px;
-      background: linear-gradient(180deg, rgba(18,18,20,0), rgba(18,18,20,.92) 20%, rgba(18,18,20,.98));
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 8px;
+      margin-top: 12px;
+      position: static;
+      padding: 0;
+      background: transparent;
     }
 
     .resultBtnRow .btn,
     .resultBtnRow .badge{
       width: 100%;
-      min-height: 46px;
-      justify-content: center;
+      min-height: 44px;
+      min-width:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      font-size: 14px;
+      padding: 0 10px;
+      white-space: nowrap;
     }
     .resultPhotoBox{
       margin-top: 10px;
@@ -686,6 +691,13 @@
     .resultPhotoActions .btn{
       width:100%;
       min-width:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      font-size:14px;
+      padding: 0 10px;
+      white-space: nowrap;
     }
     .resultPhotoPreviewWrap{
       display:none;
@@ -696,7 +708,7 @@
     }
     .resultPhotoPreview{
       width:100%;
-      max-height:min(30vh, 220px);
+      max-height:min(24vh, 180px);
       object-fit:contain;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.10);
@@ -715,18 +727,21 @@
     }
     #matchResultModal .modalBody{
       max-height: calc(var(--appH, 100vh) - 88px);
-      padding-bottom: 10px;
+      padding-bottom: 12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
     }
 
     @media (max-width: 520px){
       .resultWinText{
         font-size: 24px;
       }
-      .resultBtnRow{
-        grid-template-columns: 1fr;
-      }
-      .resultPhotoActions{
-        grid-template-columns: 1fr;
+      .resultBtnRow .btn,
+      .resultPhotoActions .btn{
+        min-height: 42px;
+        font-size: 13px;
+        padding: 0 8px;
       }
     }
       @media (orientation: portrait){
@@ -736,9 +751,23 @@
         }
         #matchResultModal .modalSheet{
           width: min(94vw, 560px);
-          max-height: calc(var(--appH, 100vh) - 12px);
+          max-height: calc(var(--appH, 100vh) - 10px);
+        }
+        #matchResultModal .modalBody{
+          max-height: calc(var(--appH, 100vh) - 74px);
+        }
+        .resultPhotoBox{
+          padding: 10px;
+        }
+        .resultPhotoPreview{
+          max-height: min(20vh, 150px);
         }
       }  
+      @media (orientation: landscape){
+        .resultPhotoPreview{
+          max-height: min(28vh, 200px);
+        }
+      }
     .modalHeader{
       display:flex; align-items:center; justify-content:space-between;
       gap: 10px;
