@@ -639,7 +639,11 @@
     .resultBtnRow .btn,
     .resultBtnRow .badge{
       width: 100%;
+      display:inline-flex;
+      align-items:center;
       justify-content: center;
+      text-align:center;
+      white-space:nowrap;
     }
     .resultPhotoBox{
       margin-top: 10px;
@@ -671,6 +675,14 @@
       gap:8px;
       flex-wrap:wrap;
       margin-top:10px;
+      align-items:center;
+    }
+    .resultPhotoActions .btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      line-height:1;
+      text-align:center;
     }
     .resultPhotoPreviewWrap{
       display:none;
@@ -699,7 +711,13 @@
         font-size: 24px;
       }
       .resultBtnRow{
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .resultBtnRow .btn{
+        min-width:0;
+        padding: 0 12px;
+        font-size: 14px;
       }
     }
       @media (orientation: portrait){
@@ -1437,7 +1455,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.37</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.42</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1544,14 +1562,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.37"></script>
+  <script src="app.js?v=v22.24.42"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.37").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.24.42").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.37</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.42</div>
 
 </body>
 </html>
