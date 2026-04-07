@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.39');
+    const v = (window.__TS_APP_VERSION || 'v22.24.42');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.40";
+  const APP_VERSION = "v22.24.42";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -659,44 +659,73 @@ function debounce(fn, ms=120){
     updateMatchResultPhotoUI();
   }
 
-  function _maybeParseJsonObject(value){
-    if(!value) return null;
-    if(typeof value === "object") return value;
-    if(typeof value === "string"){
-      try{
-        const parsed = JSON.parse(value);
-        return (parsed && typeof parsed === "object") ? parsed : null;
-      }catch(_e){
-        return null;
-      }
+  function _maybeParseJson(value){
+    if(typeof value !== "string") return value;
+    const s = value.trim();
+    if(!s) return value;
+    if((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))){
+      try{ return JSON.parse(s); }catch(_e){}
+    }
+    return value;
+  }
+
+  function _normalizeCompletionPhotoCandidate(candidate){
+    const c = _maybeParseJson(candidate);
+    if(!c) return null;
+    if(typeof c === "string"){
+      if(/^data:image\//i.test(c)) return { dataUrl:c, name:'match-photo.jpg' };
+      return null;
+    }
+    if(typeof c !== "object") return null;
+
+    const dataUrl = c.dataUrl || c.url || c.src || c.base64 || null;
+    if(!dataUrl || typeof dataUrl !== "string") return null;
+    return {
+      name: c.name || 'match-photo.jpg',
+      mimeType: c.mimeType || 'image/jpeg',
+      sizeBytes: c.sizeBytes ?? null,
+      width: c.width ?? null,
+      height: c.height ?? null,
+      dataUrl,
+      capturedAt: c.capturedAt || null
+    };
+  }
+
+  function getSavedCompletionPhotoFromRow(row){
+    const rawData = _maybeParseJson(row?.data) || {};
+    const d = (rawData && typeof rawData === 'object') ? rawData : {};
+    const s = _maybeParseJson(d?.state) || {};
+    const media = _maybeParseJson(d?.media) || {};
+    const stateMedia = _maybeParseJson(s?.media) || {};
+
+    const candidates = [
+      media?.completionPhoto,
+      stateMedia?.completionPhoto,
+      s?.completionPhoto,
+      d?.completionPhoto,
+      row?.media?.completionPhoto,
+      row?.completionPhoto
+    ];
+
+    for(const candidate of candidates){
+      const normalized = _normalizeCompletionPhotoCandidate(candidate);
+      if(normalized?.dataUrl) return normalized;
     }
     return null;
   }
 
-  function getSavedCompletionPhotoFromRow(row){
-    const queue = [row];
-    const seen = new Set();
+  async function loadRecordById(recordId){
+    if(!recordId) return null;
+    if (!supabase) await initSupabase();
 
-    while(queue.length){
-      const raw = queue.shift();
-      const cur = _maybeParseJsonObject(raw);
-      if(!cur || seen.has(cur)) continue;
-      seen.add(cur);
+    const { data, error } = await supabase
+      .from("match_records")
+      .select("id, created_at, app_version, data")
+      .eq("id", recordId)
+      .limit(1);
 
-      const direct = cur?.completionPhoto;
-      if(direct?.dataUrl) return direct;
-
-      const mediaPhoto = cur?.media?.completionPhoto;
-      if(mediaPhoto?.dataUrl) return mediaPhoto;
-
-      const nestedKeys = ["data", "state", "record", "payload", "match", "snapshot"];
-      for(const key of nestedKeys){
-        const nextVal = cur?.[key];
-        if(nextVal) queue.push(nextVal);
-      }
-    }
-
-    return null;
+    if(error) throw error;
+    return pickSingleRow(data);
   }
 
   function updateMatchResultPhotoUI(){
@@ -784,13 +813,8 @@ function debounce(fn, ms=120){
     return data || null;
   }
 
-
   async function persistCompletionPhotoToSavedRecord(){
-    if(!_pendingCompletionPhoto) return null;
-    if(!_completedSavedRowId){
-      await ensureCompletedMatchSaved();
-    }
-    if(!_completedSavedRowId) return null;
+    if(!_completedSavedRowId || !_pendingCompletionPhoto) return null;
     if (!supabase) await initSupabase();
 
     const record = buildRecordPayload("completed_photo_update");
@@ -869,7 +893,8 @@ function debounce(fn, ms=120){
     const completionPhoto = getPendingCompletionPhoto();
     if(completionPhoto && isCompleted){
       media.completionPhoto = completionPhoto;
-      snapState.media = Object.assign({}, snapState.media || {}, { completionPhoto });
+      if(!snapState.media || typeof snapState.media !== "object") snapState.media = {};
+      snapState.media.completionPhoto = JSON.parse(JSON.stringify(completionPhoto));
     }
 
     return {
@@ -894,18 +919,6 @@ function debounce(fn, ms=120){
     if (error) throw error;
     const row = pickSingleRow(data);
     return { rowId: row?.id || null, record: row?.data || record };
-  }
-
-  async function fetchRecordById(recordId){
-    if(!recordId) return null;
-    if (!supabase) await initSupabase();
-    const { data, error } = await supabase
-      .from("match_records")
-      .select("id, created_at, app_version, data")
-      .eq("id", recordId)
-      .limit(1);
-    if(error) throw error;
-    return pickSingleRow(data);
   }
 
   async function ensureCompletedMatchSaved(){
@@ -1032,7 +1045,7 @@ function debounce(fn, ms=120){
           const file = photoInput.files?.[0];
           if(!file) return;
           await applyCompletionPhotoFile(file);
-          if(state?.winner){
+          if(state?.winner && _completedSavedRowId){
             await persistCompletionPhotoToSavedRecord();
           }
         }catch(err){
@@ -1569,14 +1582,10 @@ function checkWinTiebreak(){
   function upsertSetGameHistory(setNo){
     state.setGameHistories = Array.isArray(state.setGameHistories) ? state.setGameHistories : [];
     const gh = JSON.parse(JSON.stringify(state.gameHistory || []));
-    // v22.24.39: 세트별 기록은 배열 슬롯 기준으로만 유지 (객체 중복 저장 방지)
-    state.setGameHistories[setNo - 1] = gh;
-    // 혹시 남아있는 구버전 객체형 항목은 같은 세트 번호 기준으로 제거
-    state.setGameHistories = state.setGameHistories.filter((item, idx) => {
-      if(Array.isArray(item)) return true;
-      if(item && typeof item === "object" && Number(item.set) === Number(setNo)) return false;
-      return true;
-    });
+    const idx = state.setGameHistories.findIndex(x => x && x.set === setNo);
+    const obj = { set: setNo, gameHistory: gh };
+    if(idx >= 0) state.setGameHistories[idx] = obj;
+    else state.setGameHistories.push(obj);
   } 
     
   function startNewSet(){
@@ -2533,7 +2542,7 @@ function checkWinTiebreak(){
             cursor: pointer;
           `;
   
-          const hasPhoto = !!getSavedCompletionPhotoFromRow(r);
+          const hasPhoto = !!getSavedCompletionPhotoFromRow(r)?.dataUrl;
           const tag = inProg
             ? `<span style="padding:2px 8px; border-radius:999px; background: rgba(59,130,246,.25); border:1px solid rgba(59,130,246,.5); color:#eaf3ff; font-size:12px;">진행중 · 복원가능</span>`
             : `<span style="padding:2px 8px; border-radius:999px; background: rgba(16,185,129,.20); border:1px solid rgba(16,185,129,.45); color:#eafff6; font-size:12px;">완료</span>`;
@@ -2565,7 +2574,7 @@ function checkWinTiebreak(){
                 }
               }
             } else {
-              openMatchSummary(r);
+              await openMatchSummary(r);
             }
           });
   
@@ -2590,20 +2599,20 @@ function checkWinTiebreak(){
     async function openMatchSummary(row){
     let summaryRow = row;
     let completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
-    if(!completionPhoto && row?.id){
+    if(!completionPhoto?.dataUrl && row?.id){
       try{
-        const freshRow = await fetchRecordById(row.id);
-        if(freshRow){
-          summaryRow = freshRow;
-          completionPhoto = getSavedCompletionPhotoFromRow(summaryRow) || completionPhoto;
+        const latestRow = await loadRecordById(row.id);
+        if(latestRow) {
+          summaryRow = latestRow;
+          completionPhoto = getSavedCompletionPhotoFromRow(summaryRow);
         }
       }catch(err){
-        console.warn("cloud summary refetch failed:", err);
+        console.warn('summary latest fetch failed', err);
       }
     }
 
-    const d = summaryRow?.data || {};
-    const s = d.state || {};
+    const d = _maybeParseJson(summaryRow?.data) || {};
+    const s = _maybeParseJson(d.state) || {};
     const created = summaryRow?.created_at ? new Date(summaryRow.created_at).toLocaleString() : '-';
     const savedAt = d.saved_at ? new Date(d.saved_at).toLocaleString() : created;
   
@@ -2747,56 +2756,29 @@ function checkWinTiebreak(){
   }
   function buildGameHistoryHtml(s, undoHistory){
   try{
-    const canonical = new Map();
+    const rows = [];
 
-    const putRow = (setNo, gameNo, g)=>{
-      const set = Number(setNo);
-      const game = Number(gameNo);
-      if(!Number.isFinite(set) || set <= 0 || !Number.isFinite(game) || game <= 0) return;
-
-      const rec = (g && typeof g === 'object')
-        ? {
-            A: g.A ?? '-',
-            B: g.B ?? '-',
-            noAdDeuceWinner: g.noAdDeuceWinner ?? null,
-            adDeuceWinner: g.adDeuceWinner ?? null
-          }
-        : g;
-
-      canonical.set(`${set}-${game}`, { set, game, g: rec });
-    };
-
-    // 1) state.setGameHistories 우선 사용
+    // 1) setGameHistories (구조가 섞여 있어도 안전하게 처리)
     const sgh = s?.setGameHistories;
     if (Array.isArray(sgh) && sgh.length > 0) {
-      const arraySets = new Set();
-
       sgh.forEach((item, idx) => {
-        if (Array.isArray(item) && item.length > 0) arraySets.add(idx + 1);
-      });
-
-      sgh.forEach((item, idx) => {
-        // (A) 최신 권장 구조: [ [g,g..], [g,g..] ]
+        // (A) 배열 형태: [ [g,g..], [g,g..] ]  -> idx+1이 세트 번호
         if (Array.isArray(item)) {
-          item.forEach((g, gi) => putRow(idx + 1, gi + 1, g));
+          item.forEach((g, gi) => rows.push({ set: idx + 1, game: gi + 1, g }));
           return;
         }
-
-        // (B) 구버전 호환: { set:1, gameHistory:[...] }
+        // (B) 객체 형태: [ {set:1, gameHistory:[...]}, ... ]
         if (item && typeof item === 'object') {
           const setNo = Number(item.set) || (idx + 1);
           const gh = Array.isArray(item.gameHistory) ? item.gameHistory : [];
-
-          // 같은 세트가 배열 구조로 이미 있으면 객체 구조는 중복으로 판단하여 무시
-          if (arraySets.has(setNo) && gh.length > 0) return;
-
-          gh.forEach((g, gi) => putRow(setNo, gi + 1, g));
+          gh.forEach((g, gi) => rows.push({ set: setNo, game: gi + 1, g }));
+          return;
         }
       });
     }
 
-    // 2) setGameHistories가 비어 있으면 undoHistory로 재구성
-    if (canonical.size === 0 && Array.isArray(undoHistory) && undoHistory.length > 0) {
+    // 2) setGameHistories가 없으면 undoHistory로 재구성(기존 방식, 안전 처리)
+    if (rows.length === 0 && Array.isArray(undoHistory) && undoHistory.length > 0) {
       let prevLen = 0;
       for (let i = 0; i < undoHistory.length; i++) {
         const st = undoHistory[i] || {};
@@ -2804,36 +2786,34 @@ function checkWinTiebreak(){
         const setNo = (Array.isArray(st.completedSets) ? st.completedSets.length : 0) + 1;
 
         if (i === 0) {
-          gh.forEach((g, k) => putRow(setNo, k + 1, g));
+          gh.forEach((g, k) => rows.push({ set: setNo, game: k + 1, g }));
           prevLen = gh.length;
           continue;
         }
 
         if (gh.length > prevLen) {
           for (let k = prevLen; k < gh.length; k++) {
-            putRow(setNo, k + 1, gh[k]);
+            rows.push({ set: setNo, game: k + 1, g: gh[k] });
           }
           prevLen = gh.length;
         } else if (gh.length < prevLen) {
-          prevLen = gh.length;
+          prevLen = gh.length; // 세트 넘어가며 리셋된 케이스
         }
       }
     }
 
-    // 3) 마지막 fallback: 현재 세트의 gameHistory
-    if (canonical.size === 0) {
+    // 3) 그래도 없으면 현재 state.gameHistory를 “마지막 세트”로 표시
+    if (rows.length === 0) {
       const gh = Array.isArray(s?.gameHistory) ? s.gameHistory : [];
       const lastSetNo = (Array.isArray(s?.completedSets) ? s.completedSets.length : 0) + 1;
-      gh.forEach((g, i) => putRow(lastSetNo, i + 1, g));
+      gh.forEach((g, i) => rows.push({ set: lastSetNo, game: i + 1, g }));
     }
-
-    const rows = Array.from(canonical.values())
-      .sort((a,b)=> (a.set - b.set) || (a.game - b.game));
 
     if (rows.length === 0) {
       return `<div style="margin-top:10px; color:rgba(255,255,255,.7); font-size:13px;">게임 기록이 없습니다.</div>`;
     }
 
+    // row별 표시 안전 처리 (g가 문자열/객체여도 OK)
     const tr = rows.map(r => {
       const g = r.g;
 
@@ -2841,21 +2821,21 @@ function checkWinTiebreak(){
       if (g && typeof g === 'object') {
         const A = g.A ?? '-';
         const B = g.B ?? '-';
-        scoreText = `${A}:${B}`;
+        scoreText = `${A} : ${B}`;
       } else if (typeof g === 'string' || typeof g === 'number') {
         scoreText = String(g);
       }
 
       const note =
-        (g && typeof g === 'object' && g.noAdDeuceWinner) ? `NO-AD ${g.noAdDeuceWinner}` :
-        (g && typeof g === 'object' && g.adDeuceWinner)   ? `AD ${g.adDeuceWinner}` : '';
+        (g && typeof g === 'object' && g.noAdDeuceWinner) ? `NO-AD 듀스승: ${g.noAdDeuceWinner}` :
+        (g && typeof g === 'object' && g.adDeuceWinner)   ? `AD 듀스승: ${g.adDeuceWinner}` : '';
 
       return `
         <tr>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.set}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">${r.game}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); font-weight:700; text-align:center;">${scoreText}</td>
-          <td style="padding:6px 7px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:12px; text-align:left;">${note}</td>
+          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.set}</td>
+          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08);">${r.game}</td>
+          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); font-weight:700;">${scoreText}</td>
+          <td style="padding:6px 8px; border-top:1px solid rgba(255,255,255,.08); color:rgba(255,255,255,.75); font-size:12px;">${note}</td>
         </tr>
       `;
     }).join('');
@@ -2865,20 +2845,14 @@ function checkWinTiebreak(){
         <summary style="cursor:pointer; user-select:none; color:#eaf3ff;">
           게임 기록 보기 (40:30 포함)
         </summary>
-        <div style="margin-top:10px; overflow:auto; max-height:260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
-          <table style="width:100%; min-width:420px; border-collapse:collapse; table-layout:fixed; font-size:12px;">
-            <colgroup>
-              <col style="width:52px;" />
-              <col style="width:52px;" />
-              <col style="width:96px;" />
-              <col style="width:auto;" />
-            </colgroup>
+        <div style="margin-top:10px; overflow:auto; max-height: 260px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">
+          <table style="width:100%; border-collapse:collapse; font-size:13px;">
             <thead>
               <tr style="background:rgba(255,255,255,.06);">
-                <th style="text-align:center; padding:7px 6px;">세트</th>
-                <th style="text-align:center; padding:7px 6px;">게임</th>
-                <th style="text-align:center; padding:7px 6px;">마지막점수</th>
-                <th style="text-align:left; padding:7px 6px;">비고</th>
+                <th style="text-align:left; padding:8px;">세트</th>
+                <th style="text-align:left; padding:8px;">게임</th>
+                <th style="text-align:left; padding:8px;">마지막 점수</th>
+                <th style="text-align:left; padding:8px;">비고</th>
               </tr>
             </thead>
             <tbody>${tr}</tbody>
