@@ -1162,68 +1162,45 @@ function debounce(fn, ms=120){
     }
     const currentPhoto = getPendingCompletionPhoto();
     if(!currentPhoto?.dataUrl) return null;
-    if(!_completedSavedRowId){
-      await ensureCompletedMatchSaved();
-    }
-    if(!_completedSavedRowId) return null;
     if (!supabase) await initSupabase();
 
-    const saveRowId = _completedSavedRowId;
-    const latestRow = await loadRecordById(saveRowId).catch(()=>null);
-    const latestRecord = _maybeParseJson(latestRow?.data) || null;
-    const mergedRecord = buildPhotoMergedRecord(latestRecord || buildRecordPayload('completed_photo_update'), currentPhoto);
+    // 핵심 변경:
+    // 기존 row를 덮어쓰는 대신, 사진 저장 시마다 "최신 완료 상태 + 최신 사진"으로 새 row를 남긴다.
+    // 불러오기에서는 같은 matchKey 중 가장 최신 row를 고르므로,
+    // 설정창/REGAME으로 돌아간 뒤에도 마지막 저장 사진이 안정적으로 보이게 된다.
+    const baseRecord = buildRecordPayload('completed_photo_resave');
+    const mergedRecord = buildPhotoMergedRecord(baseRecord, currentPhoto);
 
-    const updateOnce = async (recordToSave)=>{
-      const { data, error } = await supabase
-        .from("match_records")
-        .update({
-          app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
-          data: recordToSave
-        })
-        .eq("id", saveRowId)
-        .select("id, created_at, app_version, data");
-      if(error) throw error;
-      return pickSingleRow(data) || null;
-    };
+    const { data: inserted, error: insertError } = await supabase
+      .from("match_records")
+      .insert({
+        app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"),
+        data: mergedRecord
+      })
+      .select("id, created_at, app_version, data");
+    if(insertError) throw insertError;
 
-    let row = await updateOnce(mergedRecord) || latestRow || null;
-    let verifiedRow = await loadRecordById(saveRowId).catch(()=> row) || row;
-    let verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
-
-    if(!verifiedPhoto?.dataUrl){
-      const retryBase = _maybeParseJson(verifiedRow?.data) || verifiedRow?.data || mergedRecord;
-      row = await updateOnce(buildPhotoMergedRecord(retryBase, currentPhoto)) || row;
-      verifiedRow = await loadRecordById(saveRowId).catch(()=> row) || row;
-      verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
-    }
-
-    if(!verifiedPhoto?.dataUrl){
-      const fallbackRecord = buildPhotoMergedRecord(buildRecordPayload('completed_photo_insert_fallback'), currentPhoto);
-      const { data: inserted, error: insertError } = await supabase
-        .from("match_records")
-        .insert({ app_version: (typeof APP_VERSION !== "undefined" ? APP_VERSION : "v-current"), data: fallbackRecord })
-        .select("id, created_at, app_version, data");
-      if(insertError) throw insertError;
-      verifiedRow = pickSingleRow(inserted) || verifiedRow || row;
-      verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow);
-    }
-
-    if(!verifiedPhoto?.dataUrl){
+    const verifiedRow = pickSingleRow(inserted);
+    const verifiedPhoto = getSavedCompletionPhotoFromRow(verifiedRow) || currentPhoto;
+    if(!verifiedRow?.id || !verifiedPhoto?.dataUrl){
       throw new Error("사진 저장 확인 실패");
     }
 
-    if(verifiedRow?.id) _completedSavedRowId = verifiedRow.id;
+    _completedSavedRowId = verifiedRow.id;
+    _completedSavedKey = getCompletedMatchSaveKey() || _completedSavedKey;
     _pendingCompletionPhotoSaved = true;
-    const savedPhoto = Object.assign({}, getPendingCompletionPhoto() || {}, {
+
+    const savedPhoto = JSON.parse(JSON.stringify({
+      ...(getPendingCompletionPhoto() || {}),
       updatedAt: verifiedPhoto?.updatedAt || new Date().toISOString(),
       savedAt: verifiedPhoto?.savedAt || new Date().toISOString(),
       versionToken: verifiedPhoto?.versionToken || getPendingCompletionPhoto()?.versionToken || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`
-    });
+    }));
     _pendingCompletionPhoto = JSON.parse(JSON.stringify(savedPhoto));
-    const latestMatchKey = getCompletedMatchSaveKey() || null;
+    const latestMatchKey = mergedRecord.match_key || getCompletedMatchSaveKey() || null;
     setCompletionPhotoCache({
       photo: JSON.parse(JSON.stringify(savedPhoto)),
-      rowId: _completedSavedRowId || saveRowId || null,
+      rowId: _completedSavedRowId,
       matchKey: latestMatchKey,
       saved: true,
       synced: true,
