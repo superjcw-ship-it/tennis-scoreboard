@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.63');
+    const v = (window.__TS_APP_VERSION || 'v22.24.66');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.63";
+  const APP_VERSION = "v22.24.66";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -2895,6 +2895,69 @@ function checkWinTiebreak(){
     syncWakeLock();
   }
 
+function ensureLoadingOverlay(){
+  let el = document.getElementById('globalLoadingOverlay');
+  if(el) return el;
+  el = document.createElement('div');
+  el.id = 'globalLoadingOverlay';
+  el.style.cssText = [
+    'position:fixed',
+    'inset:0',
+    'z-index:12000',
+    'display:none',
+    'align-items:center',
+    'justify-content:center',
+    'padding:20px',
+    'background:rgba(0,0,0,.36)',
+    'backdrop-filter:blur(2px)',
+    '-webkit-backdrop-filter:blur(2px)'
+  ].join(';');
+  el.innerHTML = `
+    <div style="min-width:min(260px, 86vw); max-width:86vw; border-radius:16px; border:1px solid rgba(255,255,255,.14); background:rgba(17,18,22,.96); box-shadow:0 20px 50px rgba(0,0,0,.45); padding:16px 18px; color:#fff; display:flex; align-items:center; gap:12px;">
+      <div style="width:22px; height:22px; border-radius:50%; border:3px solid rgba(255,255,255,.18); border-top-color:rgba(61,220,132,.95); animation:tsSpin .8s linear infinite; flex:0 0 auto;"></div>
+      <div style="min-width:0;">
+        <div id="globalLoadingText" style="font-weight:800; font-size:15px; line-height:1.3;">불러오는 중...</div>
+        <div id="globalLoadingSub" style="margin-top:4px; color:rgba(255,255,255,.72); font-size:12px; line-height:1.35;">잠시만 기다려주세요.</div>
+      </div>
+    </div>`;
+  if(!document.getElementById('globalLoadingOverlayStyle')){
+    const st = document.createElement('style');
+    st.id = 'globalLoadingOverlayStyle';
+    st.textContent = '@keyframes tsSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  document.body.appendChild(el);
+  return el;
+}
+
+function showLoadingOverlay(message='불러오는 중...', sub='잠시만 기다려주세요.'){
+  const el = ensureLoadingOverlay();
+  window.__tsLoadingCount = (window.__tsLoadingCount || 0) + 1;
+  const textEl = document.getElementById('globalLoadingText');
+  const subEl = document.getElementById('globalLoadingSub');
+  if(textEl) textEl.textContent = message;
+  if(subEl) subEl.textContent = sub || '잠시만 기다려주세요.';
+  el.style.display = 'flex';
+  return window.__tsLoadingCount;
+}
+
+function hideLoadingOverlay(){
+  window.__tsLoadingCount = Math.max(0, (window.__tsLoadingCount || 1) - 1);
+  if(window.__tsLoadingCount > 0) return;
+  const el = document.getElementById('globalLoadingOverlay');
+  if(el) el.style.display = 'none';
+}
+
+async function withLoadingOverlay(message, task, sub){
+  showLoadingOverlay(message, sub);
+  try{
+    return await task();
+  } finally {
+    hideLoadingOverlay();
+  }
+}
+
+
    // ===== Cloud Load UI (불러오기) =====
   function _isInProgressState(s){
     if(!s) return false;
@@ -3112,15 +3175,24 @@ function checkWinTiebreak(){
               const ok = confirm('이 경기는 진행중 기록입니다. 복원할까요?');
               if(ok){
                 try{
-                  _applyCloudState(d.state, d.undoHistory);
-                  _closeCloudLoad();
+                  await withLoadingOverlay('진행중 경기 복원 중...', async ()=>{
+                    _applyCloudState(d.state, d.undoHistory);
+                    _closeCloudLoad();
+                  }, '현재 경기 상태와 되돌리기 기록을 불러오고 있습니다.');
                 }catch(e){
                   console.error(e);
                   alert('복원 실패 (콘솔 확인)');
                 }
               }
             } else {
-              await openMatchSummary(r);
+              try{
+                await withLoadingOverlay('경기 요약 불러오는 중...', async ()=>{
+                  await openMatchSummary(r);
+                }, '선택한 경기의 요약과 완료 사진을 불러오고 있습니다.');
+              }catch(e){
+                console.error(e);
+                alert('경기 요약 불러오기 실패 (콘솔 확인)');
+              }
             }
           });
   
@@ -3610,7 +3682,23 @@ function checkWinTiebreak(){
     
     bindTap(loadBtn, async (e)=>{
       e.preventDefault();
-      await openCloudLoad();
+      const btn = e?.currentTarget || loadBtn;
+      const prevDisabled = !!btn?.disabled;
+      const prevOpacity = btn?.style?.opacity || '';
+      if(btn){
+        btn.disabled = true;
+        btn.style.opacity = '.72';
+      }
+      try{
+        await withLoadingOverlay('경기 기록 불러오는 중...', async ()=>{
+          await openCloudLoad();
+        }, '클라우드에서 최근 경기 기록 목록을 가져오고 있습니다.');
+      } finally {
+        if(btn){
+          btn.disabled = prevDisabled;
+          btn.style.opacity = prevOpacity;
+        }
+      }
     });
     
     // Use bindTap for match controls too (prevents mobile double-tap zoom on rapid scoring taps)
