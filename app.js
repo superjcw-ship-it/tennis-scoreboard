@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.62');
+    const v = (window.__TS_APP_VERSION || 'v22.24.63');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.62";
+  const APP_VERSION = "v22.24.63";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -645,6 +645,7 @@ function debounce(fn, ms=120){
   let _pendingCompletionPhoto = null;
   let _pendingCompletionPhotoSaved = false;
   const COMPLETION_PHOTO_CACHE_KEY = "tennis_completion_photo_cache_v1";
+  const COMPLETION_PHOTO_LATEST_BY_MATCH_KEY = "tennis_completion_photo_latest_by_match_v1";
 
   function getPendingCompletionPhoto(){
     return _pendingCompletionPhoto ? JSON.parse(JSON.stringify(_pendingCompletionPhoto)) : null;
@@ -681,6 +682,33 @@ function debounce(fn, ms=120){
 
   function clearCompletionPhotoCache(){
     try{ localStorage.removeItem(COMPLETION_PHOTO_CACHE_KEY); }catch(_e){}
+  }
+
+
+  function getLatestCompletionPhotosByMatch(){
+    try{
+      const raw = localStorage.getItem(COMPLETION_PHOTO_LATEST_BY_MATCH_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    }catch(_e){ return {}; }
+  }
+
+  function getLatestCompletionPhotoForMatchKey(matchKey){
+    if(!matchKey) return null;
+    try{
+      const map = getLatestCompletionPhotosByMatch();
+      const photo = map[String(matchKey)] || null;
+      return photo && photo.dataUrl ? photo : null;
+    }catch(_e){ return null; }
+  }
+
+  function setLatestCompletionPhotoForMatchKey(matchKey, photo){
+    if(!matchKey || !photo?.dataUrl) return;
+    try{
+      const map = getLatestCompletionPhotosByMatch();
+      map[String(matchKey)] = JSON.parse(JSON.stringify(photo));
+      localStorage.setItem(COMPLETION_PHOTO_LATEST_BY_MATCH_KEY, JSON.stringify(map));
+    }catch(_e){}
   }
 
   function clearPendingCompletionPhoto(){
@@ -1192,14 +1220,16 @@ function debounce(fn, ms=120){
       versionToken: verifiedPhoto?.versionToken || getPendingCompletionPhoto()?.versionToken || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`
     });
     _pendingCompletionPhoto = JSON.parse(JSON.stringify(savedPhoto));
+    const latestMatchKey = getCompletedMatchSaveKey() || null;
     setCompletionPhotoCache({
       photo: JSON.parse(JSON.stringify(savedPhoto)),
       rowId: _completedSavedRowId || saveRowId || null,
-      matchKey: getCompletedMatchSaveKey() || null,
+      matchKey: latestMatchKey,
       saved: true,
       synced: true,
       updatedAt: savedPhoto.savedAt || savedPhoto.updatedAt || new Date().toISOString()
     });
+    setLatestCompletionPhotoForMatchKey(latestMatchKey, savedPhoto);
     updateMatchResultPhotoUI();
     return verifiedRow;
   }
@@ -2886,9 +2916,10 @@ function checkWinTiebreak(){
     const score = (row)=>{
       const key = getCloudRowMatchKey(row);
       const cache = getCompletionPhotoCache();
+      const latestMatchPhoto = getLatestCompletionPhotoForMatchKey(key);
       const cachePhoto = !!((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && key && cache?.matchKey && String(cache.matchKey) === String(key));
-      const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl || cachePhoto;
-      const t = _rowPhotoTimestampValue(row) || (row?.created_at ? new Date(row.created_at).getTime() : 0);
+      const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl || cachePhoto || !!latestMatchPhoto?.dataUrl;
+      const t = Math.max(_rowPhotoTimestampValue(row), _photoTimestampValue(latestMatchPhoto)) || (row?.created_at ? new Date(row.created_at).getTime() : 0);
       return { photo, t };
     };
     const chooseBetter = (a,b)=>{
@@ -3096,11 +3127,24 @@ function checkWinTiebreak(){
         completionPhoto = cache.photo;
       }
     }
-    if(!completionPhoto?.dataUrl && summaryMatchKey){
+    const latestMatchPhoto = getLatestCompletionPhotoForMatchKey(summaryMatchKey);
+    if(latestMatchPhoto?.dataUrl){
+      const latestMatchTs = _photoTimestampValue(latestMatchPhoto);
+      const rowTs = _photoTimestampValue(completionPhoto);
+      if(!completionPhoto?.dataUrl || latestMatchTs >= rowTs){
+        completionPhoto = latestMatchPhoto;
+      }
+    }
+    if(summaryMatchKey){
       try{
         const photoRow = await findRecentPhotoRowForMatchKey(summaryMatchKey, 80);
         if(photoRow){
-          completionPhoto = getSavedCompletionPhotoFromRow(photoRow);
+          const rowPhoto = getSavedCompletionPhotoFromRow(photoRow);
+          const rowPhotoTs = _photoTimestampValue(rowPhoto);
+          const currentTs = _photoTimestampValue(completionPhoto);
+          if(rowPhoto?.dataUrl && (!completionPhoto?.dataUrl || rowPhotoTs >= currentTs)){
+            completionPhoto = rowPhoto;
+          }
         }
       }catch(err){
         console.warn('summary photo row lookup failed', err);
