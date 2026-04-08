@@ -799,6 +799,50 @@ function debounce(fn, ms=120){
     return null;
   }
 
+  function _collectCompletionPhotosDeep(root, seen = new Set(), out = []){
+    if(root == null) return out;
+
+    if(typeof root === 'string'){
+      const trimmed = root.trim();
+      if(trimmed.startsWith('data:image/')){
+        const normalized = _normalizeCompletionPhotoCandidate(trimmed);
+        if(normalized?.dataUrl) out.push(normalized);
+        return out;
+      }
+      const parsed = _maybeParseJson(trimmed);
+      if(parsed && parsed !== root){
+        return _collectCompletionPhotosDeep(parsed, seen, out);
+      }
+      return out;
+    }
+
+    if(typeof root !== 'object') return out;
+    if(seen.has(root)) return out;
+    seen.add(root);
+
+    const direct = _normalizeCompletionPhotoCandidate(root);
+    if(direct?.dataUrl) out.push(direct);
+
+    const directCandidates = [
+      root.completionPhoto,
+      root.media?.completionPhoto,
+      root.state?.media?.completionPhoto,
+      root.state?.completionPhoto,
+      root.data?.media?.completionPhoto,
+      root.data?.state?.media?.completionPhoto,
+      root.data?.completionPhoto
+    ];
+    for(const candidate of directCandidates){
+      const normalized = _normalizeCompletionPhotoCandidate(candidate);
+      if(normalized?.dataUrl) out.push(normalized);
+    }
+
+    for(const value of Object.values(root)){
+      _collectCompletionPhotosDeep(value, seen, out);
+    }
+    return out;
+  }
+
   function getSavedCompletionPhotoFromRow(row){
     const rawData = _maybeParseJson(row?.data) || {};
     const d = (rawData && typeof rawData === 'object') ? rawData : {};
@@ -819,11 +863,28 @@ function debounce(fn, ms=120){
       row
     ];
 
+    const photos = [];
+    const seenKeys = new Set();
     for(const candidate of candidates){
-      const normalized = _findCompletionPhotoDeep(candidate);
-      if(normalized?.dataUrl) return normalized;
+      const list = _collectCompletionPhotosDeep(candidate, new Set(), []);
+      list.forEach((photo)=>{
+        if(!photo?.dataUrl) return;
+        const key = `${photo.dataUrl.slice(0,80)}|${photo.versionToken || ''}|${photo.savedAt || photo.updatedAt || photo.capturedAt || ''}`;
+        if(seenKeys.has(key)) return;
+        seenKeys.add(key);
+        photos.push(photo);
+      });
     }
-    return null;
+    if(!photos.length) return null;
+    photos.sort((a,b)=>{
+      const ta = _photoTimestampValue(a);
+      const tb = _photoTimestampValue(b);
+      if(tb !== ta) return tb - ta;
+      const va = String(a?.versionToken || '');
+      const vb = String(b?.versionToken || '');
+      return vb.localeCompare(va);
+    });
+    return photos[0] || null;
   }
 
   async function loadRecordById(recordId){
