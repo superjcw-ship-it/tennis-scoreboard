@@ -1211,6 +1211,61 @@ function debounce(fn, ms=120){
     return verifiedRow;
   }
 
+  function dataUrlToBlob(dataUrl){
+    const parts = String(dataUrl || '').split(',');
+    if(parts.length < 2) throw new Error('이미지 데이터가 올바르지 않습니다.');
+    const header = parts[0] || '';
+    const mime = (header.match(/data:([^;]+)/)?.[1]) || 'image/jpeg';
+    const bin = atob(parts[1]);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for(let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  function completionPhotoToFile(photo){
+    if(!photo?.dataUrl) throw new Error('저장된 사진이 없습니다.');
+    const blob = dataUrlToBlob(photo.dataUrl);
+    const fallbackExt = (blob.type === 'image/png') ? 'png' : 'jpg';
+    const safeName = String(photo.name || `match-photo-${Date.now()}.${fallbackExt}`);
+    return new File([blob], safeName, { type: blob.type || photo.mimeType || 'image/jpeg' });
+  }
+
+  async function shareCompletionPhoto(photo){
+    if(!navigator.share) throw new Error('이 브라우저는 공유 기능을 지원하지 않습니다.');
+    const file = completionPhotoToFile(photo);
+    const shareData = {
+      title: '경기 완료 사진',
+      text: '테니스 경기 완료 사진',
+      files: [file]
+    };
+    if(typeof navigator.canShare === 'function' && !navigator.canShare({ files:[file] })){
+      throw new Error('이 기기에서는 사진 앱 저장/공유를 지원하지 않습니다.');
+    }
+    await navigator.share(shareData);
+  }
+
+  function canShareCompletionPhoto(photo){
+    try{
+      if(!navigator.share || !photo?.dataUrl) return false;
+      const file = completionPhotoToFile(photo);
+      if(typeof navigator.canShare === 'function') return navigator.canShare({ files:[file] });
+      return true;
+    }catch(_e){
+      return false;
+    }
+  }
+
+  async function saveCompletionPhotoToApp(photo){
+    try{
+      await shareCompletionPhoto(photo);
+      return true;
+    }catch(err){
+      if(err && err.name === 'AbortError') return false;
+      throw err;
+    }
+  }
+
   function openPhotoViewer(photo){
     try{
       if(!photo?.dataUrl) return;
@@ -1224,15 +1279,27 @@ function debounce(fn, ms=120){
       const head = document.createElement("div");
       head.style.cssText = `display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.08);`;
       const fileName = photo.name || 'match-photo.jpg';
-      head.innerHTML = `<div style="font-weight:800;">완료 사진</div><div style="display:flex; gap:8px; align-items:center;"><a href="${photo.dataUrl}" download="${fileName}" style="padding:8px 10px; border-radius:10px; background:rgba(59,130,246,.24); border:1px solid rgba(59,130,246,.45); color:#eaf3ff; text-decoration:none;">다운로드</a><button id="completionPhotoViewerCloseBtn" style="border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;">✕</button></div>`;
+      const actionBtnStyle = 'padding:8px 12px; min-height:38px; border-radius:10px; border:1px solid rgba(255,255,255,.12); font-size:14px; font-weight:700; line-height:1.2; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; cursor:pointer;';
+      const shareBtnHtml = canShareCompletionPhoto(photo)
+        ? `<button id="completionPhotoViewerShareBtn" type="button" style="${actionBtnStyle} background:rgba(16,185,129,.22); border-color:rgba(16,185,129,.45); color:#e9fff4;">앱 저장/공유</button>`
+        : ``;
+      head.innerHTML = `<div style="font-weight:800;">완료 사진</div><div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">${shareBtnHtml}<a href="${photo.dataUrl}" download="${fileName}" style="${actionBtnStyle} background:rgba(59,130,246,.24); border-color:rgba(59,130,246,.45); color:#eaf3ff;">다운로드</a><button id="completionPhotoViewerCloseBtn" style="border:0; background:transparent; color:#fff; font-size:18px; cursor:pointer;">✕</button></div>`;
       const body = document.createElement("div");
       body.style.cssText = `padding:14px;`;
-      body.innerHTML = `<img src="${photo.dataUrl}" alt="완료 사진" style="display:block; width:100%; height:auto; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />`;
+      body.innerHTML = `<img src="${photo.dataUrl}" alt="완료 사진" style="display:block; width:100%; max-height:72vh; height:auto; object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />`;
       card.appendChild(head);
       card.appendChild(body);
       backdrop.appendChild(card);
       document.body.appendChild(backdrop);
       document.getElementById("completionPhotoViewerCloseBtn")?.addEventListener("click", ()=>backdrop.remove());
+      document.getElementById("completionPhotoViewerShareBtn")?.addEventListener("click", async ()=>{
+        try{
+          await saveCompletionPhotoToApp(photo);
+        }catch(err){
+          console.error(err);
+          alert('앱 저장/공유 실패: ' + (err?.message || err));
+        }
+      });
       backdrop.addEventListener("click", (e)=>{ if(e.target === backdrop) backdrop.remove(); });
     }catch(err){
       console.error(err);
@@ -3156,6 +3223,10 @@ function checkWinTiebreak(){
     const tbOn = (typeof s.tiebreakOn === 'boolean') ? (s.tiebreakOn ? 'ON' : 'OFF') : '-';
     const swapped = (typeof s.swapSides === 'boolean') ? (s.swapSides ? 'YES' : 'NO') : '-';
     const gameHistoryHtml = buildGameHistoryHtml(s, d.undoHistory);
+    const summaryPhotoActionStyle = `border-radius:10px; border:1px solid rgba(255,255,255,.12); padding:8px 12px; min-height:38px; font-size:14px; font-weight:700; line-height:1.2; display:inline-flex; align-items:center; justify-content:center; text-decoration:none; cursor:pointer;`;
+    const photoShareHtml = (completionPhoto?.dataUrl && canShareCompletionPhoto(completionPhoto))
+      ? `<button id="cloudSummaryPhotoShareBtn" type="button" style="${summaryPhotoActionStyle} background: rgba(16,185,129,.22); border-color: rgba(16,185,129,.45); color:#e9fff4;">앱 저장/공유</button>`
+      : ``;
     const photoHtml = `
         <div style="margin-top:12px;">
           <div style="font-weight:800; margin-bottom:8px;">완료 사진</div>
@@ -3163,9 +3234,10 @@ function checkWinTiebreak(){
             <button id="cloudSummaryPhotoBtn" type="button" style="display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer;">
               <img src="${completionPhoto.dataUrl}" alt="완료 사진 미리보기" style="display:block; width:100%; max-height:min(42vh, 260px); object-fit:contain; border-radius:12px; border:1px solid rgba(255,255,255,.10); background:#0f1012;" />
             </button>
-            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-              <button id="cloudSummaryPhotoViewBtn" type="button" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(245,158,11,.22); color:#fff5de; padding:8px 10px; cursor:pointer;">사진 보기</button>
-              <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="border-radius:10px; border:1px solid rgba(255,255,255,.12); background: rgba(59,130,246,.22); color:#eaf3ff; padding:8px 10px; text-decoration:none;">다운로드</a>
+            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button id="cloudSummaryPhotoViewBtn" type="button" style="${summaryPhotoActionStyle} background: rgba(245,158,11,.22); color:#fff5de;">사진 보기</button>
+              <a id="cloudSummaryPhotoDownloadBtn" href="${completionPhoto.dataUrl}" download="${completionPhoto.name || 'match-photo.jpg'}" style="${summaryPhotoActionStyle} background: rgba(59,130,246,.22); border-color: rgba(59,130,246,.45); color:#eaf3ff;">다운로드</a>
+              ${photoShareHtml}
             </div>
           ` : `
             <div style="padding:12px 14px; border-radius:12px; border:1px dashed rgba(255,255,255,.18); background:rgba(255,255,255,.03); color:rgba(255,255,255,.72); font-size:13px;">
@@ -3261,6 +3333,14 @@ function checkWinTiebreak(){
   
     document.getElementById('cloudSummaryPhotoBtn')?.addEventListener('click', ()=> openPhotoViewer(completionPhoto));
     document.getElementById('cloudSummaryPhotoViewBtn')?.addEventListener('click', ()=> openPhotoViewer(completionPhoto));
+    document.getElementById('cloudSummaryPhotoShareBtn')?.addEventListener('click', async ()=>{
+      try{
+        await saveCompletionPhotoToApp(completionPhoto);
+      }catch(err){
+        console.error(err);
+        alert('앱 저장/공유 실패: ' + (err?.message || err));
+      }
+    });
 
     document.getElementById('cloudSummaryCopyBtn')?.addEventListener('click', async ()=>{
       const text =
