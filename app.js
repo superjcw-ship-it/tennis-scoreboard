@@ -698,13 +698,17 @@ function debounce(fn, ms=120){
     _pendingCompletionPhoto = photo ? JSON.parse(JSON.stringify(photo)) : null;
     _pendingCompletionPhotoSaved = false;
     if(_pendingCompletionPhoto){
+      const nowIso = new Date().toISOString();
+      _pendingCompletionPhoto.updatedAt = nowIso;
+      _pendingCompletionPhoto.savedAt = null;
+      _pendingCompletionPhoto.versionToken = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
       setCompletionPhotoCache({
         photo: _pendingCompletionPhoto,
         rowId: _completedSavedRowId || null,
         matchKey: getCompletedMatchSaveKey() || null,
         saved: false,
         synced: false,
-        updatedAt: new Date().toISOString()
+        updatedAt: nowIso
       });
     } else {
       clearCompletionPhotoCache();
@@ -857,8 +861,11 @@ function debounce(fn, ms=120){
         removeBtn.style.display = "inline-flex";
         if(saveBtn){
           saveBtn.style.display = "inline-flex";
-          saveBtn.disabled = false;
+          saveBtn.disabled = !!saved;
           saveBtn.textContent = saved ? "사진 저장 완료" : "사진 저장";
+          saveBtn.style.opacity = saved ? "0.62" : "1";
+          saveBtn.style.cursor = saved ? "default" : "pointer";
+          saveBtn.style.filter = saved ? "grayscale(.08)" : "none";
         }
         if(statusEl){
           statusEl.textContent = saved ? "완료 사진이 경기 기록에 저장되었습니다." : "사진 미리보기 상태입니다. '사진 저장'을 눌러야 경기 기록에 저장됩니다.";
@@ -872,6 +879,9 @@ function debounce(fn, ms=120){
           saveBtn.style.display = "inline-flex";
           saveBtn.disabled = true;
           saveBtn.textContent = "사진 저장";
+          saveBtn.style.opacity = "0.48";
+          saveBtn.style.cursor = "not-allowed";
+          saveBtn.style.filter = "grayscale(.12)";
         }
         if(statusEl){
           statusEl.textContent = "사진을 촬영하거나 선택한 뒤 저장할 수 있습니다.";
@@ -941,6 +951,29 @@ function debounce(fn, ms=120){
     return data || null;
   }
 
+  function _photoTimestampValue(photo){
+    if(!photo) return 0;
+    const candidates = [photo.savedAt, photo.updatedAt, photo.capturedAt, photo.createdAt, photo.storedAt];
+    for(const c of candidates){
+      const t = c ? new Date(c).getTime() : 0;
+      if(Number.isFinite(t) && t > 0) return t;
+    }
+    return 0;
+  }
+
+  function _rowPhotoTimestampValue(row){
+    const photo = getSavedCompletionPhotoFromRow(row);
+    const photoTs = _photoTimestampValue(photo);
+    if(photoTs > 0) return photoTs;
+    const d = _maybeParseJson(row?.data) || {};
+    const candidates = [d?.saved_at, row?.updated_at, row?.created_at];
+    for(const c of candidates){
+      const t = c ? new Date(c).getTime() : 0;
+      if(Number.isFinite(t) && t > 0) return t;
+    }
+    return 0;
+  }
+
   function buildPhotoMergedRecord(baseRecord, explicitPhoto=null){
     const base = _maybeParseJson(baseRecord) || {};
     const record = (base && typeof base === 'object') ? JSON.parse(JSON.stringify(base)) : {};
@@ -948,6 +981,10 @@ function debounce(fn, ms=120){
     const photo = explicitPhoto || getPendingCompletionPhoto() || (((cache?.saved || cache?.synced) && cache?.photo?.dataUrl) ? cache.photo : null);
     if(!photo?.dataUrl) return record;
     const photoCopy = JSON.parse(JSON.stringify(photo));
+    const nowIso = new Date().toISOString();
+    photoCopy.updatedAt = nowIso;
+    photoCopy.savedAt = nowIso;
+    if(!photoCopy.versionToken) photoCopy.versionToken = `${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     if(!record.media || typeof record.media !== 'object') record.media = {};
     record.media.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
     record.completionPhoto = JSON.parse(JSON.stringify(photoCopy));
@@ -1054,13 +1091,19 @@ function debounce(fn, ms=120){
 
     if(verifiedRow?.id) _completedSavedRowId = verifiedRow.id;
     _pendingCompletionPhotoSaved = true;
+    const savedPhoto = Object.assign({}, getPendingCompletionPhoto() || {}, {
+      updatedAt: verifiedPhoto?.updatedAt || new Date().toISOString(),
+      savedAt: verifiedPhoto?.savedAt || new Date().toISOString(),
+      versionToken: verifiedPhoto?.versionToken || getPendingCompletionPhoto()?.versionToken || `${Date.now()}_${Math.random().toString(36).slice(2,8)}`
+    });
+    _pendingCompletionPhoto = JSON.parse(JSON.stringify(savedPhoto));
     setCompletionPhotoCache({
-      photo: getPendingCompletionPhoto(),
+      photo: JSON.parse(JSON.stringify(savedPhoto)),
       rowId: _completedSavedRowId || saveRowId || null,
       matchKey: getCompletedMatchSaveKey() || null,
       saved: true,
       synced: true,
-      updatedAt: new Date().toISOString()
+      updatedAt: savedPhoto.savedAt || savedPhoto.updatedAt || new Date().toISOString()
     });
     updateMatchResultPhotoUI();
     return verifiedRow;
@@ -2750,7 +2793,7 @@ function checkWinTiebreak(){
       const cache = getCompletionPhotoCache();
       const cachePhoto = !!((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && key && cache?.matchKey && String(cache.matchKey) === String(key));
       const photo = !!getSavedCompletionPhotoFromRow(row)?.dataUrl || cachePhoto;
-      const t = row?.created_at ? new Date(row.created_at).getTime() : 0;
+      const t = _rowPhotoTimestampValue(row) || (row?.created_at ? new Date(row.created_at).getTime() : 0);
       return { photo, t };
     };
     const chooseBetter = (a,b)=>{
@@ -2782,8 +2825,8 @@ function checkWinTiebreak(){
     same.forEach((row)=>{
       if(!getSavedCompletionPhotoFromRow(row)?.dataUrl) return;
       if(!best){ best = row; return; }
-      const bt = best?.created_at ? new Date(best.created_at).getTime() : 0;
-      const rt = row?.created_at ? new Date(row.created_at).getTime() : 0;
+      const bt = _rowPhotoTimestampValue(best) || (best?.created_at ? new Date(best.created_at).getTime() : 0);
+      const rt = _rowPhotoTimestampValue(row) || (row?.created_at ? new Date(row.created_at).getTime() : 0);
       if(rt >= bt) best = row;
     });
     return best;
@@ -2948,11 +2991,13 @@ function checkWinTiebreak(){
       }
     }
     const summaryMatchKey = getCloudRowMatchKey(summaryRow);
-    if(!completionPhoto?.dataUrl){
-      const cache = getCompletionPhotoCache();
-      const cacheMatchesRowId = !!(summaryRow?.id && cache?.rowId && String(cache.rowId) === String(summaryRow.id));
-      const cacheMatchesMatchKey = !!(summaryMatchKey && cache?.matchKey && String(cache.matchKey) === String(summaryMatchKey));
-      if((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && (cacheMatchesRowId || cacheMatchesMatchKey || (!summaryRow?.id && !summaryMatchKey))){
+    const cache = getCompletionPhotoCache();
+    const cacheMatchesRowId = !!(summaryRow?.id && cache?.rowId && String(cache.rowId) === String(summaryRow.id));
+    const cacheMatchesMatchKey = !!(summaryMatchKey && cache?.matchKey && String(cache.matchKey) === String(summaryMatchKey));
+    if((cache?.saved || cache?.synced) && cache?.photo?.dataUrl && (cacheMatchesRowId || cacheMatchesMatchKey || (!summaryRow?.id && !summaryMatchKey))){
+      const cacheTs = _photoTimestampValue(cache.photo);
+      const rowTs = _photoTimestampValue(completionPhoto);
+      if(!completionPhoto?.dataUrl || cacheTs >= rowTs){
         completionPhoto = cache.photo;
       }
     }
