@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.58');
+    const v = (window.__TS_APP_VERSION || 'v22.24.62');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.58";
+  const APP_VERSION = "v22.24.62";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -739,7 +739,12 @@ function debounce(fn, ms=120){
           width: null,
           height: null,
           dataUrl: c,
-          capturedAt: null
+          capturedAt: null,
+          createdAt: null,
+          updatedAt: null,
+          savedAt: null,
+          storedAt: null,
+          versionToken: null
         };
       }
       return null;
@@ -752,7 +757,12 @@ function debounce(fn, ms=120){
       width: c.width || null,
       height: c.height || null,
       dataUrl: c.dataUrl,
-      capturedAt: c.capturedAt || null
+      capturedAt: c.capturedAt || null,
+      createdAt: c.createdAt || null,
+      updatedAt: c.updatedAt || null,
+      savedAt: c.savedAt || null,
+      storedAt: c.storedAt || null,
+      versionToken: c.versionToken || null
     };
   }
 
@@ -1035,9 +1045,33 @@ function debounce(fn, ms=120){
     return 0;
   }
 
+  function _stripCompletionPhotoDeep(root, seen = new Set()){
+    if(root == null || typeof root !== 'object') return;
+    if(seen.has(root)) return;
+    seen.add(root);
+
+    if(Array.isArray(root)){
+      root.forEach((item)=>_stripCompletionPhotoDeep(item, seen));
+      return;
+    }
+
+    if(Object.prototype.hasOwnProperty.call(root, 'completionPhoto')){
+      try{ delete root.completionPhoto; }catch(_e){ root.completionPhoto = undefined; }
+    }
+
+    for(const [key, value] of Object.entries(root)){
+      if(key === 'completionPhoto'){
+        try{ delete root[key]; }catch(_e){ root[key] = undefined; }
+        continue;
+      }
+      _stripCompletionPhotoDeep(value, seen);
+    }
+  }
+
   function buildPhotoMergedRecord(baseRecord, explicitPhoto=null){
     const base = _maybeParseJson(baseRecord) || {};
     const record = (base && typeof base === 'object') ? JSON.parse(JSON.stringify(base)) : {};
+    _stripCompletionPhotoDeep(record);
     const cache = getCompletionPhotoCache() || null;
     const photo = explicitPhoto || getPendingCompletionPhoto() || (((cache?.saved || cache?.synced) && cache?.photo?.dataUrl) ? cache.photo : null);
     if(!photo?.dataUrl) return record;
