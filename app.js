@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.04');
+    const v = (window.__TS_APP_VERSION || 'v22.25.05');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.04";
+  const APP_VERSION = "v22.25.05";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -2434,7 +2434,7 @@ function checkWinTiebreak(){
   }
 
   function toggleSimpleGamesToWin(){
-    if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
+    if(!["simple","watch"].includes(state.scoreStyle) || !state.started || state.winner) return;
     if(state.tiebreak){ showSimpleToast("타이브레이크 중에는 게임 수를 변경할 수 없습니다"); return; }
     const current=getGamesToWin(), target=current===6?4:6;
     if(target===4 && Math.max(Number(state.games?.A||0),Number(state.games?.B||0))>=4){
@@ -2447,7 +2447,7 @@ function checkWinTiebreak(){
   }
 
   function extendSimpleMatchFormat(){
-    if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
+    if(!["simple","watch"].includes(state.scoreStyle) || !state.started || state.winner) return;
     const cur=getBestOf(), next=cur===1?3:(cur===3?5:null);
     if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
     if(!window.confirm(`${next===3?"3세트 2선승":"5세트 3선승"}으로 변경할까요?`)) return;
@@ -2591,23 +2591,68 @@ function checkWinTiebreak(){
     if(!watchScoreBoard || __watchGestureBound) return;
     __watchGestureBound = true;
 
+    const clearWatchLongPress = ()=>{
+      try{
+        if(__watchGesture?.longTimer){
+          clearTimeout(__watchGesture.longTimer);
+          __watchGesture.longTimer = null;
+        }
+      }catch(_e){}
+    };
+
+    function getWatchMetaAction(target){
+      try{
+        const meta = target?.closest?.('.watchMeta > span') || null;
+        if(!meta) return null;
+        if(meta.querySelector('#watchGameA, #watchGameB')) return 'game';
+        if(meta.querySelector('#watchSetA, #watchSetB')) return 'set';
+      }catch(_e){}
+      return null;
+    }
+
     watchScoreBoard.addEventListener("pointerdown", (e)=>{
       if(state.scoreStyle!=="watch" || !state.started || state.winner) return;
       const side = e.target?.closest?.(".watchSide") || null;
+      const metaAction = getWatchMetaAction(e.target);
+      const pointArea = e.target?.closest?.('.watchPoint') || null;
+
       __watchGesture = {
         id:e.pointerId,
         x:e.clientX,
         y:e.clientY,
         t:Date.now(),
-        team:side?.dataset?.team || null
+        // GAME/SET 메타 영역은 득점 탭에서 제외한다.
+        team:(!metaAction && (pointArea || side)) ? (side?.dataset?.team || null) : null,
+        metaAction,
+        longFired:false,
+        longTimer:null
       };
+
+      if(metaAction){
+        __watchGesture.longTimer = setTimeout(()=>{
+          if(!__watchGesture || __watchGesture.id!==e.pointerId) return;
+          __watchGesture.longFired = true;
+          if(metaAction === 'game') toggleSimpleGamesToWin();
+          else if(metaAction === 'set') extendSimpleMatchFormat();
+          try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
+        },650);
+      }
       try{ watchScoreBoard.setPointerCapture(e.pointerId); }catch(_e){}
+    }, {passive:true});
+
+    watchScoreBoard.addEventListener("pointermove", (e)=>{
+      const g=__watchGesture;
+      if(!g || g.id!==e.pointerId) return;
+      if(Math.hypot(e.clientX-g.x,e.clientY-g.y)>16) clearWatchLongPress();
     }, {passive:true});
 
     watchScoreBoard.addEventListener("pointerup", (e)=>{
       const g = __watchGesture;
+      clearWatchLongPress();
       __watchGesture = null;
       if(!g || g.id!==e.pointerId || state.scoreStyle!=="watch" || !state.started || state.winner) return;
+      if(g.longFired){ e.preventDefault(); return; }
+
       const dx=e.clientX-g.x, dy=e.clientY-g.y;
       const ax=Math.abs(dx), ay=Math.abs(dy);
       if(dx<=-40 && ax>Math.max(ay*1.15,40)){
@@ -2617,6 +2662,11 @@ function checkWinTiebreak(){
         try{ if(navigator.vibrate) navigator.vibrate([10,18,10]); }catch(_e){}
         return;
       }
+
+      // GAME / SET은 심플 모드와 동일하게 길게 눌러 형식을 변경한다.
+      // 짧게 누른 경우에는 득점으로 처리하지 않는다.
+      if(g.metaAction) return;
+
       if(g.team && ax<22 && ay<22 && (Date.now()-g.t)<900){
         e.preventDefault();
         pointWon(g.team === "B" ? "B" : "A");
@@ -2624,23 +2674,27 @@ function checkWinTiebreak(){
       }
     }, {passive:false});
 
-    watchScoreBoard.addEventListener("pointercancel", ()=>{ __watchGesture=null; }, {passive:true});
+    watchScoreBoard.addEventListener("pointercancel", ()=>{
+      clearWatchLongPress();
+      __watchGesture=null;
+    }, {passive:true});
 
-    // Watch prototype has no extra button: long-press the top status to open settings.
-    if(watchStatus && !watchStatus.__watchSettingsBound){
-      watchStatus.__watchSettingsBound = true;
+    // 심플 모드와 동일: LIVE/BREAK/SET POINT 등 상태 배지를 길게 누르면
+    // 설정창으로 이동하지 않고 경기 세트 형식(1→3→5세트)을 변경한다.
+    if(watchStatus && !watchStatus.__watchFormatBound){
+      watchStatus.__watchFormatBound = true;
       let timer=null, sx=0, sy=0;
       watchStatus.addEventListener("pointerdown", (e)=>{
-        if(state.scoreStyle!=="watch" || !state.started) return;
+        if(state.scoreStyle!=="watch" || !state.started || state.winner) return;
         sx=e.clientX; sy=e.clientY;
         timer=setTimeout(()=>{
           timer=null;
-          try{ if(navigator.vibrate) navigator.vibrate([15,20,15]); }catch(_e){}
-          openSettings();
-        },700);
+          extendSimpleMatchFormat();
+          try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
+        },650);
       }, {passive:true});
       watchStatus.addEventListener("pointermove", (e)=>{
-        if(timer && Math.hypot(e.clientX-sx,e.clientY-sy)>14){ clearTimeout(timer); timer=null; }
+        if(timer && Math.hypot(e.clientX-sx,e.clientY-sy)>16){ clearTimeout(timer); timer=null; }
       }, {passive:true});
       const stop=()=>{ if(timer){clearTimeout(timer);timer=null;} };
       watchStatus.addEventListener("pointerup", stop, {passive:true});
