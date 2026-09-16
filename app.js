@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.05');
+    const v = (window.__TS_APP_VERSION || 'v22.25.06');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.05";
+  const APP_VERSION = "v22.25.06";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -1456,9 +1456,15 @@ function debounce(fn, ms=120){
       if(!modal || !textEl || !state?.winner) return;
 
       textEl.textContent = `${state.winner} 승리!`;
-      if(["simple","watch"].includes(state.scoreStyle) && getBestOf() < 5){
-        setTimeout(()=>showSimpleToast("한 세트 더 하려면 승리 문구를 누르세요"), 280);
+      // v22.25.06: 승리 문구는 표시 전용. 추가 경기는 명확한 버튼으로만 처리한다.
+      const continueBtn = document.getElementById("continueMatchBtn");
+      const resultBtnRow = document.querySelector("#matchResultModal .resultBtnRow");
+      const canContinue = ["simple","watch"].includes(state.scoreStyle) && getBestOf() < 5;
+      if(continueBtn){
+        continueBtn.style.display = canContinue ? "" : "none";
+        continueBtn.disabled = !canContinue;
       }
+      if(resultBtnRow) resultBtnRow.classList.toggle("hasContinue", canContinue);
       updateMatchResultPhotoUI();
       modal.style.display = "block";
       modal.setAttribute("aria-hidden", "false");
@@ -1504,6 +1510,7 @@ function debounce(fn, ms=120){
 
   function wireMatchResultModal(){
     const backdrop = document.getElementById("matchResultBackdrop");
+    const continueBtn = document.getElementById("continueMatchBtn");
     const regameBtn = document.getElementById("regameBtn");
     const setupBtn = document.getElementById("goSetupAfterMatchBtn");
     const takePhotoBtn = document.getElementById("takeMatchResultPhotoBtn");
@@ -1514,6 +1521,21 @@ function debounce(fn, ms=120){
     if(backdrop && !backdrop.__matchResultWired){
       backdrop.__matchResultWired = true;
       backdrop.addEventListener("click", (e)=>{ e.preventDefault(); e.stopPropagation(); });
+    }
+    if(continueBtn && !continueBtn.__matchResultWired){
+      continueBtn.__matchResultWired = true;
+      continueBtn.addEventListener("click", async (e)=>{
+        e.preventDefault(); e.stopPropagation();
+        if(!["simple","watch"].includes(state.scoreStyle) || !state.winner) return;
+        try{
+          continueBtn.disabled = true;
+          await extendCompletedMatchFromWinner();
+          try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
+        }catch(err){
+          continueBtn.disabled = false;
+          showErr("추가 경기 처리 오류:", err);
+        }
+      });
     }
     if(regameBtn && !regameBtn.__matchResultWired){
       regameBtn.__matchResultWired = true;
@@ -1574,17 +1596,6 @@ function debounce(fn, ms=120){
       });
     }
 
-    const winText = document.getElementById("matchResultWinText");
-    if(winText && !winText.__continueMatchWired){
-      winText.__continueMatchWired=true;
-      winText.style.cursor="pointer";
-      winText.addEventListener("click", async (e)=>{
-        if(!["simple","watch"].includes(state.scoreStyle) || !state.winner) return;
-        e.preventDefault(); e.stopPropagation();
-        try{ await extendCompletedMatchFromWinner(); try{if(navigator.vibrate)navigator.vibrate([18,28,18]);}catch(_e){} }
-        catch(err){ showErr("추가 경기 처리 오류:",err); }
-      });
-    }
     updateMatchResultPhotoUI();
   }
 
