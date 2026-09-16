@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.03');
+    const v = (window.__TS_APP_VERSION || 'v22.25.04');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.03";
+  const APP_VERSION = "v22.25.04";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -1456,8 +1456,8 @@ function debounce(fn, ms=120){
       if(!modal || !textEl || !state?.winner) return;
 
       textEl.textContent = `${state.winner} 승리!`;
-      if(state.scoreStyle === "simple" && Number(state.bestOf||1) < 5){
-        setTimeout(()=>showSimpleToast("한 세트 더 하려면 승리 문구를 길게 누르세요"), 280);
+      if(["simple","watch"].includes(state.scoreStyle) && getBestOf() < 5){
+        setTimeout(()=>showSimpleToast("한 세트 더 하려면 승리 문구를 누르세요"), 280);
       }
       updateMatchResultPhotoUI();
       modal.style.display = "block";
@@ -1575,18 +1575,15 @@ function debounce(fn, ms=120){
     }
 
     const winText = document.getElementById("matchResultWinText");
-    if(winText && !winText.__simpleExtendWired){
-      winText.__simpleExtendWired = true;
-      let lp=null, sx=0, sy=0;
-      winText.addEventListener("pointerdown", (e)=>{
-        if(state.scoreStyle!=="simple" || !state.winner) return;
-        sx=e.clientX; sy=e.clientY;
-        lp=setTimeout(()=>{ lp=null; extendCompletedSimpleMatch(); try{if(navigator.vibrate)navigator.vibrate([18,28,18]);}catch(_e){} },700);
-      }, {passive:true});
-      winText.addEventListener("pointermove", (e)=>{ if(lp && Math.hypot(e.clientX-sx,e.clientY-sy)>16){clearTimeout(lp);lp=null;} }, {passive:true});
-      const stop=()=>{if(lp){clearTimeout(lp);lp=null;}};
-      winText.addEventListener("pointerup", stop, {passive:true});
-      winText.addEventListener("pointercancel", stop, {passive:true});
+    if(winText && !winText.__continueMatchWired){
+      winText.__continueMatchWired=true;
+      winText.style.cursor="pointer";
+      winText.addEventListener("click", async (e)=>{
+        if(!["simple","watch"].includes(state.scoreStyle) || !state.winner) return;
+        e.preventDefault(); e.stopPropagation();
+        try{ await extendCompletedMatchFromWinner(); try{if(navigator.vibrate)navigator.vibrate([18,28,18]);}catch(_e){} }
+        catch(err){ showErr("추가 경기 처리 오류:",err); }
+      });
     }
     updateMatchResultPhotoUI();
   }
@@ -1615,6 +1612,7 @@ function wireResetChoiceModal(){
       mode:"doubles",
       bestOf:1,
       gamesToWin:4,
+      matchFormat:{bestOf:1, gamesToWin:4, tiebreakOn:false},
       scoreStyle:"standard", // standard | simple | watch
       // 심플모드 BREAK POINT 순번(현재 게임 내 실제 기회 순서)
       breakPointNo:0,
@@ -1665,6 +1663,19 @@ function wireResetChoiceModal(){
     if(typeof pick("bestOf")==="number") s.bestOf = pick("bestOf");
     if(typeof pick("gamesToWin")==="number") s.gamesToWin = pick("gamesToWin");
     if(typeof pick("scoreStyle")==="string") s.scoreStyle = pick("scoreStyle");
+    {
+      const mf = pick("matchFormat");
+      if(mf && typeof mf === "object"){
+        const bo = Number(mf.bestOf), gw = Number(mf.gamesToWin);
+        s.matchFormat = {
+          bestOf:[1,3,5].includes(bo) ? bo : s.bestOf,
+          gamesToWin:[4,6].includes(gw) ? gw : s.gamesToWin,
+          tiebreakOn:typeof mf.tiebreakOn === "boolean" ? mf.tiebreakOn : !!s.tiebreakOn
+        };
+      }else{
+        s.matchFormat = {bestOf:s.bestOf, gamesToWin:s.gamesToWin, tiebreakOn:!!s.tiebreakOn};
+      }
+    }
     if(typeof pick("noAd")==="boolean") s.noAd = pick("noAd");
     if(typeof pick("started")==="boolean") s.started = pick("started");
 
@@ -1701,6 +1712,13 @@ function wireResetChoiceModal(){
     // gamesToWin: 4/6만 허용 (추가)
     if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
     if(!["standard","simple","watch"].includes(s.scoreStyle)) s.scoreStyle = "standard";
+    if(!s.matchFormat || typeof s.matchFormat !== "object") s.matchFormat = {};
+    const mfBest = Number(s.matchFormat.bestOf), mfGames = Number(s.matchFormat.gamesToWin);
+    s.matchFormat.bestOf = [1,3,5].includes(mfBest) ? mfBest : s.bestOf;
+    s.matchFormat.gamesToWin = [4,6].includes(mfGames) ? mfGames : s.gamesToWin;
+    if(typeof s.matchFormat.tiebreakOn !== "boolean") s.matchFormat.tiebreakOn = !!s.tiebreakOn;
+    s.bestOf = s.matchFormat.bestOf;
+    s.gamesToWin = s.matchFormat.gamesToWin;
     if(!Number.isFinite(Number(s.breakPointNo)) || Number(s.breakPointNo) < 0) s.breakPointNo = 0;
     s.breakPointNo = Math.max(0, Math.floor(Number(s.breakPointNo) || 0));
     if(s.breakPointTeam !== "A" && s.breakPointTeam !== "B") s.breakPointTeam = null;
@@ -1754,6 +1772,18 @@ function wireResetChoiceModal(){
 
   // ---------- Helpers ----------
   function bestOfWinTarget(bestOf){ return Math.floor(bestOf/2)+1; }
+  function getBestOf(){
+    const v = Number(state?.matchFormat?.bestOf ?? state?.bestOf ?? 1);
+    return [1,3,5].includes(v) ? v : 1;
+  }
+  function syncRuntimeFormat(bestOf, gamesToWin, tiebreakOn){
+    const bo=[1,3,5].includes(Number(bestOf))?Number(bestOf):1;
+    const gw=[4,6].includes(Number(gamesToWin))?Number(gamesToWin):4;
+    state.bestOf=bo; state.gamesToWin=gw;
+    state.matchFormat=(state.matchFormat && typeof state.matchFormat==="object")?state.matchFormat:{};
+    state.matchFormat.bestOf=bo; state.matchFormat.gamesToWin=gw;
+    if(typeof tiebreakOn==="boolean"){ state.tiebreakOn=tiebreakOn; state.matchFormat.tiebreakOn=tiebreakOn; }
+  }
 
   function teamForSide(side){
     if(!state.swapSides) return (side==="L") ? "A" : "B";
@@ -1898,7 +1928,8 @@ function checkWinTiebreak(){
   }
 
   function getGamesToWin(){
-  return (state.gamesToWin === 4) ? 4 : 6;
+    const v=Number(state?.matchFormat?.gamesToWin ?? state?.gamesToWin ?? 4);
+    return v===6 ? 6 : 4;
   }
   function getTbTrigger(){
     // 4게임이면 3-3에서 TB, 6게임이면 6-6에서 TB
@@ -1921,7 +1952,7 @@ function checkWinTiebreak(){
   }
 
   function checkWinMatch(){
-    const t = bestOfWinTarget(state.bestOf);
+    const t = bestOfWinTarget(getBestOf());
     if(state.sets.A>=t) return "A";
     if(state.sets.B>=t) return "B";
     return null;
@@ -2283,7 +2314,7 @@ function checkWinTiebreak(){
 
   function pointWouldWinMatch(team){
     if(!gamesWouldWinSet(team)) return false;
-    const target = Math.floor((Number(state.bestOf) || 1) / 2) + 1;
+    const target = Math.floor(getBestOf() / 2) + 1;
     return ((state.sets?.[team] || 0) + 1) >= target;
   }
 
@@ -2405,66 +2436,45 @@ function checkWinTiebreak(){
   function toggleSimpleGamesToWin(){
     if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
     if(state.tiebreak){ showSimpleToast("타이브레이크 중에는 게임 수를 변경할 수 없습니다"); return; }
-    const current = getGamesToWin();
-    if(current === 6){
-      const maxGames = Math.max(Number(state.games?.A||0), Number(state.games?.B||0));
-      if(maxGames >= 4){ showSimpleToast("현재 세트는 이미 4게임 이상 진행되어 4게임제로 줄일 수 없습니다"); return; }
-      state.gamesToWin = 4;
-      state.tiebreakOn = false;
-      showSimpleToast("4게임 선승제로 변경");
-    }else{
-      state.gamesToWin = 6;
-      state.tiebreakOn = true;
-      showSimpleToast("6게임 선승제로 변경");
+    const current=getGamesToWin(), target=current===6?4:6;
+    if(target===4 && Math.max(Number(state.games?.A||0),Number(state.games?.B||0))>=4){
+      showSimpleToast("현재 세트는 이미 4게임 이상 진행되어 4게임제로 줄일 수 없습니다"); return;
     }
-    if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin);
-    saveState(state);
-    render(true);
+    if(!window.confirm(`${target}게임 선승제로 변경할까요?`)) return;
+    syncRuntimeFormat(getBestOf(), target, target===6);
+    if(gamesToWinSel) gamesToWinSel.value=String(target);
+    saveState(state); render(true); showSimpleToast(`${target}게임 선승제로 변경`);
   }
 
   function extendSimpleMatchFormat(){
     if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
-    const cur = Number(state.bestOf)||1;
-    const next = cur===1 ? 3 : (cur===3 ? 5 : null);
+    const cur=getBestOf(), next=cur===1?3:(cur===3?5:null);
     if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
-    state.bestOf = next;
-    if(bestOfSel) bestOfSel.value = String(next);
-    saveState(state);
-    render(true);
-    showSimpleToast(next===3 ? "3세트 2선승으로 연장" : "5세트 3선승으로 연장");
+    if(!window.confirm(`${next===3?"3세트 2선승":"5세트 3선승"}으로 변경할까요?`)) return;
+    syncRuntimeFormat(next, getGamesToWin(), !!state.tiebreakOn);
+    if(bestOfSel) bestOfSel.value=String(next);
+    saveState(state); render(true);
+    showSimpleToast(next===3?"3세트 2선승으로 변경":"5세트 3선승으로 변경");
   }
 
 
-  async function extendCompletedSimpleMatch(){
-    if(state.scoreStyle !== "simple" || !state.started || !state.winner) return;
-    const cur = Number(state.bestOf)||1;
-    const next = cur===1 ? 3 : (cur===3 ? 5 : null);
+  async function extendCompletedMatchFromWinner(){
+    if(!["simple","watch"].includes(state.scoreStyle) || !state.started || !state.winner) return;
+    const cur=getBestOf(), next=cur===1?3:(cur===3?5:null);
     if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
-
-    const reuseRowId = _completedSavedRowId || null;
-    state.bestOf = next;
-    state.winner = null;
-    state.completedAt = null;
-    state.extendedRecordId = reuseRowId;
-    _lastMatchResultWinner = null;
-    _completedSaveKey = null;
-    _completedSavePromise = null;
-    _completedSavedKey = null;
-    // row id는 extendedRecordId로 넘겨 최종 완료 시 같은 row를 재사용
-    _completedSavedRowId = null;
-    startNewSet();
-    closeMatchResultModal();
-    if(bestOfSel) bestOfSel.value = String(next);
-    saveState(state);
-    render(true);
-    syncWakeLock();
-    showSimpleToast(next===3 ? "기록 유지 · 3세트 2선승으로 계속" : "기록 유지 · 5세트 3선승으로 계속");
-
-    // 이미 자동 저장된 완료 row가 있으면 즉시 '진행 중' 상태로 되돌려 중복 완료 기록 방지
+    const reuseRowId=_completedSavedRowId||null;
+    syncRuntimeFormat(next, getGamesToWin(), !!state.tiebreakOn);
+    state.winner=null; state.completedAt=null; state.extendedRecordId=reuseRowId;
+    _lastMatchResultWinner=null; _completedSaveKey=null; _completedSavePromise=null; _completedSavedKey=null; _completedSavedRowId=null;
+    startNewSet(); closeMatchResultModal();
+    if(bestOfSel) bestOfSel.value=String(next);
+    if(gamesToWinSel) gamesToWinSel.value=String(getGamesToWin());
+    saveState(state); render(true); syncWakeLock();
+    showSimpleToast(next===3?"기록 유지 · 다음 세트 계속":"기록 유지 · 5세트 3선승으로 계속");
     if(reuseRowId){
       try{
         if(!supabase) await initSupabase();
-        const record = buildRecordPayload("match_extended");
+        const record=buildRecordPayload("match_extended");
         await supabase.from("match_records").update({app_version:APP_VERSION,data:record}).eq("id",reuseRowId);
       }catch(err){ console.warn("extend row update failed",err); }
     }
@@ -2693,7 +2703,7 @@ function checkWinTiebreak(){
     // setup UI sync
     if(modeSel){
       modeSel.value = state.mode;
-      bestOfSel.value = String(state.bestOf || 1);
+      bestOfSel.value = String(getBestOf());
       if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 4);
       if(scoreStyleSel) scoreStyleSel.value = state.scoreStyle || "standard";
       if(noAdChk) noAdChk.checked = !!state.noAd;
@@ -3360,6 +3370,7 @@ function checkWinTiebreak(){
     }
     next.noAd = !!noAdChk?.checked;
     next.tiebreakOn = !!tbOnChk?.checked;
+    next.matchFormat = {bestOf:next.bestOf, gamesToWin:next.gamesToWin, tiebreakOn:!!next.tiebreakOn};
 
     if(next.mode==="doubles"){
       next.names.A1=(pA1.value||"").trim()||"A1";
@@ -4100,34 +4111,21 @@ async function withLoadingOverlay(message, task, sub){
     });
 
     bestOfSel?.addEventListener("change", ()=>{
-      const v = parseInt(bestOfSel.value,10) || 1;
-      state.bestOf = ([1,3,5].includes(v) ? v : 1);
+      const v=parseInt(bestOfSel.value,10)||1;
+      syncRuntimeFormat([1,3,5].includes(v)?v:1, getGamesToWin(), !!state.tiebreakOn);
       saveState(state);
     });
     
     gamesToWinSel?.addEventListener("change", ()=>{
-      const v = parseInt(gamesToWinSel.value, 10) || 4;
-      state.gamesToWin = ([4,6].includes(v) ? v : 4);
-      state.tiebreakOn = (state.gamesToWin === 6);
-
-      const trigger = getTbTrigger();
-      const noPointStarted = ((state.points.A|0) + (state.points.B|0) === 0);
-
-      if(!state.tiebreakOn && state.tiebreak){
-        state.tiebreak = false;
-        state.tbPoints = {A:0, B:0};
-        resetPoints();
-      }
-
-      if(state.tiebreakOn && !state.tiebreak &&
-         state.games.A===trigger && state.games.B===trigger && noPointStarted){
-        state.tiebreak = true;
-        state.tbPoints = {A:0, B:0};
-      }
-
-      if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
-      saveState(state);
-      render(true);
+      const v=parseInt(gamesToWinSel.value,10)||4;
+      const gw=[4,6].includes(v)?v:4;
+      syncRuntimeFormat(getBestOf(), gw, gw===6);
+      const trigger=getTbTrigger();
+      const noPointStarted=((state.points.A|0)+(state.points.B|0)===0);
+      if(!state.tiebreakOn && state.tiebreak){ state.tiebreak=false; state.tbPoints={A:0,B:0}; resetPoints(); }
+      if(state.tiebreakOn && !state.tiebreak && state.games.A===trigger && state.games.B===trigger && noPointStarted){ state.tiebreak=true; state.tbPoints={A:0,B:0}; }
+      if(tbOnChk) tbOnChk.checked=!!state.tiebreakOn;
+      saveState(state); render(true);
     });
     
     noAdChk?.addEventListener("change", ()=>{
