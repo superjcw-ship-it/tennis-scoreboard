@@ -1230,7 +1230,7 @@
       
 
 
-    /* ===== v22.25.04: Simple Scoreboard / broadcast layout ===== */
+    /* ===== v22.25.05: Simple Scoreboard / broadcast layout ===== */
     .simpleBoardView{ display:none; margin-top:8px; }
     .simpleStatusBar{
       min-height:42px;
@@ -1411,7 +1411,7 @@
 
 
 
-    /* ===== v22.25.04: Watch prototype ===== */
+    /* ===== v22.25.05: Watch prototype ===== */
     .watchBoardView{
       display:none;
       width:100%;
@@ -1670,7 +1670,7 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <!-- ===== Simple Scoreboard (v22.25.04) ===== -->
+        <!-- ===== Simple Scoreboard (v22.25.05) ===== -->
         <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
           <div class="simpleStatusBar">
             <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
@@ -1697,9 +1697,9 @@
           </div>
         </div>
 
-        <!-- ===== Watch Prototype (v22.25.04) ===== -->
+        <!-- ===== Watch Prototype (v22.25.05) ===== -->
         <div id="watchBoardView" class="watchBoardView" style="display:none;">
-          <div id="watchScoreBoard" class="watchScoreBoard" aria-label="워치 테스트 스코어보드. 좌우 영역을 눌러 득점하고 왼쪽으로 스와이프하면 이전 점수로 되돌립니다.">
+          <div id="watchScoreBoard" class="watchScoreBoard" aria-label="워치 테스트 스코어보드. 좌우 영역을 눌러 득점하고 왼쪽으로 스와이프하면 이전 점수로 되돌립니다. GAME을 길게 누르면 4게임과 6게임 방식을 변경하고 SET 또는 상태 배지를 길게 누르면 세트 방식을 연장합니다.">
             <div id="watchStatus" class="watchStatus" data-kind="live">LIVE</div>
             <button id="watchSideA" class="watchSide" data-team="A" type="button" aria-label="A 득점">
               <div class="watchNameRow"><span id="watchServeA" class="watchServeDot"></span><span id="watchNameA" class="watchName">A</span></div>
@@ -1890,7 +1890,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.04</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.05</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1997,14 +1997,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.25.04"></script>
+  <script src="app.js?v=v22.25.05"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.25.04").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.05").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.04</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.05</div>
 
 </body>
 </html>
