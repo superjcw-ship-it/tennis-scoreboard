@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.24.66');
+    const v = (window.__TS_APP_VERSION || 'v22.25.00');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.24.66";
+  const APP_VERSION = "v22.25.00";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -308,6 +308,7 @@ function debounce(fn, ms=120){
   const modeSel = $("mode");
   const bestOfSel = $("bestOf");
   const gamesToWinSel = $("gamesToWin");
+  const scoreStyleSel = $("scoreStyle");
   const noAdChk = $("noAd");
   const tbOnChk = $("tbOn");
 
@@ -376,6 +377,23 @@ function debounce(fn, ms=120){
   const courtSwapBtn = $("courtSwapBtn");
 
   const serverLine = $("serverLine");
+
+  // Simple scoreboard view
+  const simpleBoardView = $("simpleBoardView");
+  const simpleStatus = $("simpleStatus");
+  const simpleServeA = $("simpleServeA");
+  const simpleServeB = $("simpleServeB");
+  const simpleNameA = $("simpleNameA");
+  const simpleNameB = $("simpleNameB");
+  const simpleSetA = $("simpleSetA");
+  const simpleSetB = $("simpleSetB");
+  const simpleGameA = $("simpleGameA");
+  const simpleGameB = $("simpleGameB");
+  const simplePointA = $("simplePointA");
+  const simplePointB = $("simplePointB");
+  const simplePointBtnA = $("simplePointBtnA");
+  const simplePointBtnB = $("simplePointBtnB");
+  const simpleUndoBtn = $("simpleUndoBtn");
 
   const btnPointA = $("btnPointA");
   const btnPointB = $("btnPointB");
@@ -1547,6 +1565,7 @@ function wireResetChoiceModal(){
       mode:"doubles",
       bestOf:1,
       gamesToWin:4,
+      scoreStyle:"standard", // standard | simple
       noAd:true,
   
       // preference: whether to play a tiebreak game at 3:3 or 6:6
@@ -1590,6 +1609,7 @@ function wireResetChoiceModal(){
     if(typeof pick("mode")==="string") s.mode = pick("mode");
     if(typeof pick("bestOf")==="number") s.bestOf = pick("bestOf");
     if(typeof pick("gamesToWin")==="number") s.gamesToWin = pick("gamesToWin");
+    if(typeof pick("scoreStyle")==="string") s.scoreStyle = pick("scoreStyle");
     if(typeof pick("noAd")==="boolean") s.noAd = pick("noAd");
     if(typeof pick("started")==="boolean") s.started = pick("started");
 
@@ -1625,6 +1645,7 @@ function wireResetChoiceModal(){
     if (![1,3,5].includes(s.bestOf)) s.bestOf = 1;
     // gamesToWin: 4/6만 허용 (추가)
     if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
+    if(!["standard","simple"].includes(s.scoreStyle)) s.scoreStyle = "standard";
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
     if(Array.isArray(pick("setGameHistories"))) {
@@ -2166,6 +2187,118 @@ function checkWinTiebreak(){
     return (!isNoAdEffective() && txt==="AD");
   }
 
+  // ---------- Simple scoreboard helpers ----------
+  function pointStateWouldWinGame(team){
+    if(state.tiebreak){
+      const a = (state.tbPoints?.A || 0) + (team === "A" ? 1 : 0);
+      const b = (state.tbPoints?.B || 0) + (team === "B" ? 1 : 0);
+      return (a >= 7 && a-b >= 2) || (b >= 7 && b-a >= 2);
+    }
+    const a = (state.points?.A || 0) + (team === "A" ? 1 : 0);
+    const b = (state.points?.B || 0) + (team === "B" ? 1 : 0);
+    if(isNoAdEffective()){
+      if(a >= 3 && b >= 3) return Math.abs(a-b) >= 1;
+      return (a >= 4 && a-b >= 2) || (b >= 4 && b-a >= 2);
+    }
+    return (a >= 4 && a-b >= 2) || (b >= 4 && b-a >= 2);
+  }
+
+  function gamesWouldWinSet(team){
+    if(state.tiebreak){
+      if(!pointStateWouldWinGame(team)) return false;
+      return true; // winning the active TB wins the set
+    }
+    if(!pointStateWouldWinGame(team)) return false;
+    const a = (state.games?.A || 0) + (team === "A" ? 1 : 0);
+    const b = (state.games?.B || 0) + (team === "B" ? 1 : 0);
+    const gtw = getGamesToWin();
+    const tbBase = getTbTrigger();
+    if(a === tbBase + 1 && b === tbBase) return true;
+    if(b === tbBase + 1 && a === tbBase) return true;
+    return (a >= gtw && a-b >= 2) || (b >= gtw && b-a >= 2);
+  }
+
+  function pointWouldWinMatch(team){
+    if(!gamesWouldWinSet(team)) return false;
+    const target = Math.floor((Number(state.bestOf) || 1) / 2) + 1;
+    return ((state.sets?.[team] || 0) + 1) >= target;
+  }
+
+  function breakPointCount(){
+    if(state.tiebreak || state.winner) return {team:null, count:0};
+    const sk = String(currentServerKey() || "A");
+    const serverTeam = sk.startsWith("B") ? "B" : "A";
+    const receiver = serverTeam === "A" ? "B" : "A";
+    const rp = state.points?.[receiver] || 0;
+    const sp = state.points?.[serverTeam] || 0;
+    let count = 0;
+
+    if(isNoAdEffective()){
+      if(rp >= 3 && sp >= 3) count = 1;
+      else if(rp === 3 && sp < 3) count = Math.max(1, 3 - sp);
+    }else{
+      if(rp === 3 && sp < 3) count = Math.max(1, 3 - sp);
+      else if(rp >= 4 && rp === sp + 1) count = 1;
+    }
+    return {team:receiver, count};
+  }
+
+  function getSimpleStatus(){
+    if(state.winner) return {text:"MATCH COMPLETE", kind:"complete", team:null};
+
+    for(const team of ["A","B"]){
+      if(pointWouldWinMatch(team)){
+        return {text: state.tiebreak ? "MATCH POINT · TIE-BREAK" : "MATCH POINT", kind:"match", team};
+      }
+    }
+    for(const team of ["A","B"]){
+      if(gamesWouldWinSet(team)){
+        return {text: state.tiebreak ? "SET POINT · TIE-BREAK" : "SET POINT", kind:"set", team};
+      }
+    }
+    const bp = breakPointCount();
+    if(bp.count > 0){
+      return {text: bp.count > 1 ? `${bp.count} BREAK POINTS` : "BREAK POINT", kind:"break", team:bp.team};
+    }
+    if(state.tiebreak) return {text:"TIE-BREAK", kind:"tiebreak", team:null};
+    return {text:"LIVE", kind:"live", team:null};
+  }
+
+  function renderSimpleBoard(){
+    const isSimple = state.scoreStyle === "simple";
+    document.body.classList.toggle("simple-score-mode", isSimple && !!state.started);
+    if(simpleBoardView) simpleBoardView.style.display = isSimple ? "block" : "none";
+
+    const boardTitle = document.querySelector("#boardCard .title");
+    if(boardTitle) boardTitle.textContent = isSimple ? "Simple Scoreboard" : "Tennis Scoreboard";
+    if(!isSimple) return;
+
+    if(simpleNameA) simpleNameA.textContent = teamName("A");
+    if(simpleNameB) simpleNameB.textContent = teamName("B");
+    if(simpleSetA) simpleSetA.textContent = String(state.sets?.A || 0);
+    if(simpleSetB) simpleSetB.textContent = String(state.sets?.B || 0);
+    if(simpleGameA) simpleGameA.textContent = String(state.games?.A || 0);
+    if(simpleGameB) simpleGameB.textContent = String(state.games?.B || 0);
+    if(simplePointA) simplePointA.textContent = displayPointForTeam("A");
+    if(simplePointB) simplePointB.textContent = displayPointForTeam("B");
+
+    const sk = String(currentServerKey() || "A");
+    const servingTeam = sk.startsWith("B") ? "B" : "A";
+    simpleServeA?.classList.toggle("on", servingTeam === "A");
+    simpleServeB?.classList.toggle("on", servingTeam === "B");
+
+    const st = getSimpleStatus();
+    if(simpleStatus){
+      simpleStatus.textContent = st.text;
+      simpleStatus.dataset.kind = st.kind || "live";
+    }
+    document.getElementById("simpleRowA")?.classList.toggle("keyPoint", st.team === "A");
+    document.getElementById("simpleRowB")?.classList.toggle("keyPoint", st.team === "B");
+
+    if(simplePointBtnA) simplePointBtnA.textContent = `${teamName("A")} 득점`;
+    if(simplePointBtnB) simplePointBtnB.textContent = `${teamName("B")} 득점`;
+  }
+
   function render(full=false){
     clearErr();
 
@@ -2185,6 +2318,7 @@ function checkWinTiebreak(){
       modeSel.value = state.mode;
       bestOfSel.value = String(state.bestOf || 1);
       if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin || 4);
+      if(scoreStyleSel) scoreStyleSel.value = state.scoreStyle || "standard";
       if(noAdChk) noAdChk.checked = !!state.noAd;
       if(tbOnChk) tbOnChk.checked = !!state.tiebreakOn;
 
@@ -2240,6 +2374,8 @@ function checkWinTiebreak(){
     gamesB.textContent = String(gR);
     setsA.textContent  = String(sL);
     setsB.textContent  = String(sR);
+
+    renderSimpleBoard();
 
     // tiebreak superscript shown while TB at 6:6
     if(state.tiebreak && state.games.A===6 && state.games.B===6){
@@ -2838,6 +2974,7 @@ function checkWinTiebreak(){
     next.mode = modeSel.value;
     next.bestOf = parseInt(bestOfSel.value,10) || 1;
     next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 4;
+    next.scoreStyle = (scoreStyleSel?.value === "simple") ? "simple" : "standard";
     next.noAd = !!noAdChk?.checked;
     next.tiebreakOn = !!tbOnChk?.checked;
 
@@ -3704,6 +3841,9 @@ async function withLoadingOverlay(message, task, sub){
     // Use bindTap for match controls too (prevents mobile double-tap zoom on rapid scoring taps)
     bindTap(btnPointA, ()=> pointWon(teamForSide("L")));
     bindTap(btnPointB, ()=> pointWon(teamForSide("R")));
+    bindTap(simplePointBtnA, ()=> pointWon("A"));
+    bindTap(simplePointBtnB, ()=> pointWon("B"));
+    bindTap(simpleUndoBtn, ()=> undo());
 
     bindTap(undoBtn, ()=> undo());
 
