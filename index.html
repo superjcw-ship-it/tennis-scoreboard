@@ -1230,7 +1230,7 @@
       
 
 
-    /* ===== v22.25.01: Simple Scoreboard / broadcast layout ===== */
+    /* ===== v22.25.02: Simple Scoreboard / broadcast layout ===== */
     .simpleBoardView{ display:none; margin-top:8px; }
     .simpleStatusBar{
       min-height:42px;
@@ -1367,6 +1367,17 @@
       -webkit-tap-highlight-color:transparent;
     }
     .simplePointCell:active{ filter:brightness(1.14); }
+    .simpleGameCell{ touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+    .simpleStatus{ touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+    .simpleGestureToast{
+      position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom,0px));
+      transform:translate(-50%,14px); opacity:0; pointer-events:none; z-index:12000;
+      max-width:min(92vw,760px); padding:9px 13px; border-radius:12px;
+      background:rgba(8,10,12,.92); border:1px solid rgba(255,255,255,.18); color:#fff;
+      font-size:12px; font-weight:850; line-height:1.25; text-align:center;
+      box-shadow:0 10px 30px rgba(0,0,0,.35); transition:opacity .16s ease, transform .16s ease;
+    }
+    .simpleGestureToast.show{ opacity:1; transform:translate(-50%,0); }
 
     body.simple-score-mode #boardCard .standardScoreOnly{ display:none !important; }
     body.simple-score-mode #undoMiniBtn,
@@ -1538,12 +1549,12 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <!-- ===== Simple Scoreboard (v22.25.01) ===== -->
+        <!-- ===== Simple Scoreboard (v22.25.02) ===== -->
         <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
           <div class="simpleStatusBar">
             <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
           </div>
-          <div id="simpleScoreBoard" class="simpleScoreBoard" aria-label="심플 스코어보드. 오른쪽 포인트를 눌러 득점하고, 보드를 왼쪽으로 스와이프하면 이전 점수로 되돌립니다.">
+          <div id="simpleScoreBoard" class="simpleScoreBoard" aria-label="심플 스코어보드. 오른쪽 포인트를 눌러 득점하고, 보드를 왼쪽으로 스와이프하면 이전 점수로 되돌립니다. 게임 점수를 길게 누르면 4게임과 6게임 방식을 변경하고, 상태 배지를 길게 누르면 세트 방식을 연장합니다.">
             <div id="simpleRowA" class="simpleScoreRow">
               <div class="simplePlayerCell">
                 <span id="simpleServeA" class="simpleServeDot" aria-hidden="true"></span>
@@ -1741,7 +1752,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.24.54</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.02</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1848,14 +1859,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.25.01"></script>
+  <script src="app.js?v=v22.25.02"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.25.01").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.02").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.01</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.02</div>
 
 </body>
 </html>
