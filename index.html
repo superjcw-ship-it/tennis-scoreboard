@@ -1230,7 +1230,7 @@
       
 
 
-    /* ===== v22.25.02: Simple Scoreboard / broadcast layout ===== */
+    /* ===== v22.25.03: Simple Scoreboard / broadcast layout ===== */
     .simpleBoardView{ display:none; margin-top:8px; }
     .simpleStatusBar{
       min-height:42px;
@@ -1409,6 +1409,126 @@
       .simplePointCell{ font-size:clamp(30px,6.4vw,46px); }
     }
 
+
+
+    /* ===== v22.25.03: Watch prototype ===== */
+    .watchBoardView{
+      display:none;
+      width:100%;
+      min-height:0;
+      align-items:center;
+      justify-content:center;
+      padding:4px 0;
+    }
+    .watchScoreBoard{
+      position:relative;
+      width:min(94vw, calc(var(--appH, 100vh) - 34px), 430px);
+      max-width:100%;
+      aspect-ratio:1/1;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      overflow:hidden;
+      border-radius:clamp(26px,8vw,54px);
+      border:1px solid rgba(255,255,255,.14);
+      background:#0c0d0f;
+      box-shadow:0 20px 56px rgba(0,0,0,.48);
+      touch-action:none;
+      user-select:none;
+      -webkit-user-select:none;
+    }
+    .watchScoreBoard.undoFlash{ animation:simpleUndoFlash .24s ease; }
+    .watchSide{
+      appearance:none;
+      -webkit-appearance:none;
+      position:relative;
+      min-width:0;
+      border:0;
+      border-radius:0;
+      margin:0;
+      padding:clamp(24px,7vw,42px) clamp(8px,3vw,16px) clamp(14px,4vw,24px);
+      background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.01));
+      color:#fff;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:space-between;
+      gap:6px;
+      cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+      touch-action:none;
+    }
+    .watchSide + .watchSide{ border-left:1px solid rgba(255,255,255,.12); }
+    .watchSide.keyPoint{ background:linear-gradient(180deg,rgba(216,245,60,.11),rgba(216,245,60,.035)); }
+    .watchSide:active{ background:rgba(22,136,255,.14); }
+    .watchNameRow{
+      width:100%; min-width:0;
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      font-size:clamp(12px,3.5vw,17px); font-weight:950;
+    }
+    .watchName{ max-width:calc(100% - 18px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .watchServeDot{
+      width:8px; height:8px; flex:0 0 auto; border-radius:50%;
+      background:rgba(255,255,255,.16);
+    }
+    .watchServeDot.on{ background:var(--accent); box-shadow:0 0 0 3px rgba(61,220,132,.12),0 0 12px rgba(61,220,132,.58); }
+    .watchPoint{
+      flex:1;
+      width:100%;
+      display:flex; align-items:center; justify-content:center;
+      font-size:clamp(52px,18vw,106px);
+      line-height:.9; font-weight:1000; letter-spacing:-3px;
+      text-shadow:0 4px 18px rgba(0,0,0,.32);
+    }
+    .watchMeta{
+      width:100%; display:flex; justify-content:center; gap:clamp(8px,3vw,18px);
+      color:rgba(255,255,255,.62); font-size:clamp(9px,2.7vw,12px); font-weight:850;
+      white-space:nowrap;
+    }
+    .watchMeta b{ color:#fff; font-size:1.45em; margin-left:2px; }
+    .watchStatus{
+      position:absolute; z-index:5; left:50%; top:8px; transform:translateX(-50%);
+      max-width:78%; min-height:26px; padding:0 10px;
+      display:flex; align-items:center; justify-content:center;
+      border-radius:999px; border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.09); color:#fff;
+      font-size:clamp(9px,2.5vw,11px); font-weight:950; letter-spacing:.3px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      touch-action:none;
+      backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    }
+    .watchStatus[data-kind="tiebreak"]{ color:#03232b; background:#43e6e2; }
+    .watchStatus[data-kind="break"]{ color:#142000; background:#d8f53c; }
+    .watchStatus[data-kind="set"]{ color:#071b2a; background:#68c8ff; }
+    .watchStatus[data-kind="match"]{ color:#2a1200; background:#ffbe55; }
+    .watchStatus[data-kind="complete"]{ color:#06210f; background:var(--accent); }
+
+    body.watch-score-mode .simpleBoardView,
+    body.watch-score-mode #boardCard .standardScoreOnly,
+    body.watch-score-mode #boardCard .topBar,
+    body.watch-score-mode #winnerText{ display:none !important; }
+    body.watch-score-mode #boardCard{
+      border:0 !important; box-shadow:none !important; background:transparent !important;
+      height:calc(var(--appH,100vh) - 8px) !important;
+      margin-top:0 !important;
+    }
+    body.watch-score-mode #boardCard .panelInner{
+      height:100% !important;
+      padding:4px !important;
+      overflow:hidden !important;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+    }
+
+    @media (orientation:landscape){
+      .watchScoreBoard{ width:min(78vh, 430px); }
+    }
+    @media (max-width:360px){
+      .watchScoreBoard{ width:min(96vw, calc(var(--appH, 100vh) - 20px)); border-radius:30px; }
+      .watchPoint{ font-size:clamp(48px,19vw,76px); }
+      .watchMeta{ gap:7px; }
+    }
+
   </style>
   
 </head>
@@ -1456,6 +1576,7 @@
             <select id="scoreStyle">
               <option value="standard" selected>기본 모드</option>
               <option value="simple">심플 모드</option>
+              <option value="watch">워치 모드 (테스트)</option>
             </select>
           </div>
 
@@ -1549,7 +1670,7 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <!-- ===== Simple Scoreboard (v22.25.02) ===== -->
+        <!-- ===== Simple Scoreboard (v22.25.03) ===== -->
         <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
           <div class="simpleStatusBar">
             <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
@@ -1573,6 +1694,23 @@
               <div id="simpleGameB" class="simpleGameCell">0</div>
               <button id="simplePointB" class="simplePointCell" data-team="B" type="button" aria-label="B 득점">0</button>
             </div>
+          </div>
+        </div>
+
+        <!-- ===== Watch Prototype (v22.25.03) ===== -->
+        <div id="watchBoardView" class="watchBoardView" style="display:none;">
+          <div id="watchScoreBoard" class="watchScoreBoard" aria-label="워치 테스트 스코어보드. 좌우 영역을 눌러 득점하고 왼쪽으로 스와이프하면 이전 점수로 되돌립니다.">
+            <div id="watchStatus" class="watchStatus" data-kind="live">LIVE</div>
+            <button id="watchSideA" class="watchSide" data-team="A" type="button" aria-label="A 득점">
+              <div class="watchNameRow"><span id="watchServeA" class="watchServeDot"></span><span id="watchNameA" class="watchName">A</span></div>
+              <div id="watchPointA" class="watchPoint">0</div>
+              <div class="watchMeta"><span>GAME <b id="watchGameA">0</b></span><span>SET <b id="watchSetA">0</b></span></div>
+            </button>
+            <button id="watchSideB" class="watchSide" data-team="B" type="button" aria-label="B 득점">
+              <div class="watchNameRow"><span id="watchServeB" class="watchServeDot"></span><span id="watchNameB" class="watchName">B</span></div>
+              <div id="watchPointB" class="watchPoint">0</div>
+              <div class="watchMeta"><span>GAME <b id="watchGameB">0</b></span><span>SET <b id="watchSetB">0</b></span></div>
+            </button>
           </div>
         </div>
 
@@ -1752,7 +1890,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.02</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.03</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -1859,14 +1997,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.25.02"></script>
+  <script src="app.js?v=v22.25.03"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.25.02").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.03").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.02</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.03</div>
 
 </body>
 </html>
