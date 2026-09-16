@@ -1254,7 +1254,62 @@
       
 
 
-    /* ===== v22.25.06: Simple Scoreboard / broadcast layout ===== */
+
+    /* ===== v22.25.07: Phone ↔ Watch realtime sync prototype ===== */
+    .watchSyncField{ margin-top:10px; }
+    .watchSyncOptional{ font-weight:700; color:var(--muted2); }
+    .watchSyncCode{
+      letter-spacing:.22em;
+      font-weight:900;
+      text-align:center;
+      font-variant-numeric:tabular-nums;
+    }
+    .watchSyncSetupStatus{
+      min-height:18px;
+      margin-top:6px;
+      font-size:11px;
+      color:var(--muted2);
+      line-height:1.35;
+    }
+    .watchSyncBadge{
+      height:32px;
+      padding:0 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.05);
+      color:var(--muted);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:10px;
+      font-weight:950;
+      white-space:nowrap;
+    }
+    .watchSyncBadge.connecting{ color:#ffd166; border-color:rgba(255,209,102,.38); background:rgba(255,209,102,.10); }
+    .watchSyncBadge.connected{ color:var(--accent); border-color:rgba(61,220,132,.42); background:rgba(61,220,132,.10); }
+    .watchSyncBadge.error{ color:#ff8e8e; border-color:rgba(255,77,77,.42); background:rgba(255,77,77,.10); }
+    .watchSyncMini{
+      position:absolute;
+      right:10px;
+      top:10px;
+      z-index:4;
+      padding:4px 7px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.32);
+      color:#ffd166;
+      font-size:8px;
+      font-weight:950;
+      letter-spacing:.05em;
+      pointer-events:none;
+    }
+    .watchSyncMini.connected{ color:var(--accent); border-color:rgba(61,220,132,.4); }
+    @media (max-width:520px){
+      .watchSyncBadge{ height:28px; padding:0 8px; font-size:9px; }
+      .watchSyncCode{ font-size:16px; }
+    }
+
+    /* ===== v22.25.07: Simple Scoreboard / broadcast layout ===== */
     .simpleBoardView{ display:none; margin-top:8px; }
     .simpleStatusBar{
       min-height:42px;
@@ -1435,7 +1490,7 @@
 
 
 
-    /* ===== v22.25.06: Watch prototype ===== */
+    /* ===== v22.25.07: Watch prototype ===== */
     .watchBoardView{
       display:none;
       width:100%;
@@ -1604,6 +1659,12 @@
             </select>
           </div>
 
+          <div class="field watchSyncField">
+            <div class="fieldLabel">워치 연동 코드 <span class="watchSyncOptional">(선택)</span></div>
+            <input id="watchSyncCode" class="watchSyncCode" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="두 기기에 같은 6자리 코드 입력" aria-label="워치 연동 코드" />
+            <div id="watchSyncSetupStatus" class="watchSyncSetupStatus">코드를 비워두면 기존처럼 단독 사용합니다.</div>
+          </div>
+
           <div class="setupRow2">
             <div class="setupCol">
               <div class="fieldLabel">NO-AD</div>
@@ -1684,6 +1745,7 @@
             <div class="title">Tennis Scoreboard</div>
           </div>
           <div class="topRight">
+            <div id="watchSyncBadge" class="watchSyncBadge" style="display:none;" aria-live="polite">WATCH OFF</div>
             <button class="miniBtn" id="undoMiniBtn" type="button" aria-label="되돌리기">⟲<span class="btnTxt">UNDO</span></button>
             <button class="miniBtn dangerMini" id="resetMiniBtn" type="button" aria-label="리셋">🧹<span class="btnTxt">RESET</span></button>
             <!-- ✅ 추가: 저장 버튼 (파란색 계열) -->
@@ -1694,7 +1756,7 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <!-- ===== Simple Scoreboard (v22.25.06) ===== -->
+        <!-- ===== Simple Scoreboard (v22.25.07) ===== -->
         <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
           <div class="simpleStatusBar">
             <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
@@ -1721,10 +1783,11 @@
           </div>
         </div>
 
-        <!-- ===== Watch Prototype (v22.25.06) ===== -->
+        <!-- ===== Watch Prototype (v22.25.07) ===== -->
         <div id="watchBoardView" class="watchBoardView" style="display:none;">
           <div id="watchScoreBoard" class="watchScoreBoard" aria-label="워치 테스트 스코어보드. 좌우 영역을 눌러 득점하고 왼쪽으로 스와이프하면 이전 점수로 되돌립니다. GAME을 길게 누르면 4게임과 6게임 방식을 변경하고 SET 또는 상태 배지를 길게 누르면 세트 방식을 연장합니다.">
             <div id="watchStatus" class="watchStatus" data-kind="live">LIVE</div>
+            <div id="watchSyncMini" class="watchSyncMini" style="display:none;">SYNC</div>
             <button id="watchSideA" class="watchSide" data-team="A" type="button" aria-label="A 득점">
               <div class="watchNameRow"><span id="watchServeA" class="watchServeDot"></span><span id="watchNameA" class="watchName">A</span></div>
               <div id="watchPointA" class="watchPoint">0</div>
@@ -1915,7 +1978,7 @@
           <div class="modalSheet" role="dialog" aria-modal="true" aria-label="설정">
             <div class="modalHeader">
               <div class="modalTitle">설정</div>
-              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.06</div>
+              <div id="settingsVersionText" class="settingsVersionText">버전 정보 : v22.25.07</div>
               <button class="iconBtn" id="settingsCloseBtn" type="button" aria-label="닫기">✕</button>
             </div>
 
@@ -2022,14 +2085,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.25.06"></script>
+  <script src="app.js?v=v22.25.07"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.25.06").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.07").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.06</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.07</div>
 
 </body>
 </html>
