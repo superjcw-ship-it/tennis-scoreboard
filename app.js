@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.00');
+    const v = (window.__TS_APP_VERSION || 'v22.25.01');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.00";
+  const APP_VERSION = "v22.25.01";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -385,15 +385,13 @@ function debounce(fn, ms=120){
   const simpleServeB = $("simpleServeB");
   const simpleNameA = $("simpleNameA");
   const simpleNameB = $("simpleNameB");
-  const simpleSetA = $("simpleSetA");
-  const simpleSetB = $("simpleSetB");
+  const simpleSetsA = $("simpleSetsA");
+  const simpleSetsB = $("simpleSetsB");
   const simpleGameA = $("simpleGameA");
   const simpleGameB = $("simpleGameB");
   const simplePointA = $("simplePointA");
   const simplePointB = $("simplePointB");
-  const simplePointBtnA = $("simplePointBtnA");
-  const simplePointBtnB = $("simplePointBtnB");
-  const simpleUndoBtn = $("simpleUndoBtn");
+  const simpleScoreBoard = $("simpleScoreBoard");
 
   const btnPointA = $("btnPointA");
   const btnPointB = $("btnPointB");
@@ -2264,6 +2262,90 @@ function checkWinTiebreak(){
     return {text:"LIVE", kind:"live", team:null};
   }
 
+  function simpleSetCellMarkup(setObj, team){
+    const score = Number(setObj?.[team]);
+    const other = team === "A" ? "B" : "A";
+    const tbSelf = Number(setObj?.[team === "A" ? "tbA" : "tbB"]);
+    const tbOther = Number(setObj?.[team === "A" ? "tbB" : "tbA"]);
+    let sup = "";
+    // 방송형 표기: 7-6 타이브레이크 세트에서는 패자의 TB 점수를 작은 첨자로 표시
+    if(Number.isFinite(tbSelf) && Number.isFinite(tbOther) && score === 6 && Number(setObj?.[other]) === 7){
+      sup = `<sup>${Math.max(0, tbSelf)}</sup>`;
+    }
+    return `<span class="simpleSetScoreCell"><span>${Number.isFinite(score) ? score : ""}</span>${sup}</span>`;
+  }
+
+  function renderSimpleSetHistory(){
+    const played = Array.isArray(state.completedSets) ? state.completedSets.slice(0,5) : [];
+    if(simpleSetsA) simpleSetsA.innerHTML = played.map(s=>simpleSetCellMarkup(s,"A")).join("");
+    if(simpleSetsB) simpleSetsB.innerHTML = played.map(s=>simpleSetCellMarkup(s,"B")).join("");
+  }
+
+  let __simpleGesture = null;
+  let __simpleGestureBound = false;
+
+  function flashSimpleUndo(){
+    try{
+      simpleScoreBoard?.classList.remove("undoFlash");
+      void simpleScoreBoard?.offsetWidth;
+      simpleScoreBoard?.classList.add("undoFlash");
+      setTimeout(()=>simpleScoreBoard?.classList.remove("undoFlash"), 260);
+      if(navigator.vibrate) navigator.vibrate(22);
+    }catch(_e){}
+  }
+
+  function bindSimpleScoreGestures(){
+    if(!simpleScoreBoard || __simpleGestureBound) return;
+    __simpleGestureBound = true;
+
+    simpleScoreBoard.addEventListener("pointerdown", (e)=>{
+      if(state.scoreStyle !== "simple" || !state.started) return;
+      __simpleGesture = {
+        id:e.pointerId,
+        x:e.clientX,
+        y:e.clientY,
+        t:Date.now(),
+        team:e.target?.closest?.(".simplePointCell")?.dataset?.team || null
+      };
+      try{ simpleScoreBoard.setPointerCapture(e.pointerId); }catch(_e){}
+    }, {passive:true});
+
+    simpleScoreBoard.addEventListener("pointerup", (e)=>{
+      const g = __simpleGesture;
+      __simpleGesture = null;
+      if(!g || g.id !== e.pointerId || state.scoreStyle !== "simple" || !state.started) return;
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+
+      // 좌측 스와이프 = 직전 포인트 되돌리기 (버튼 없이 제스처만 사용)
+      if(dx <= -44 && ax > Math.max(ay * 1.15, 44)){
+        e.preventDefault();
+        undo();
+        flashSimpleUndo();
+        return;
+      }
+
+      // 오른쪽 POINT 영역을 짧게 탭 = 해당 선수 득점
+      if(g.team && ax < 18 && ay < 18 && (Date.now()-g.t) < 900){
+        e.preventDefault();
+        pointWon(g.team);
+        try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_e){}
+      }
+    }, {passive:false});
+
+    simpleScoreBoard.addEventListener("pointercancel", ()=>{ __simpleGesture = null; }, {passive:true});
+
+    // 키보드 접근성(데스크톱 테스트): POINT 셀 Enter/Space
+    [simplePointA, simplePointB].forEach((el)=>{
+      el?.addEventListener("keydown", (e)=>{
+        if(e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        pointWon(el.dataset.team === "B" ? "B" : "A");
+      });
+    });
+  }
+
   function renderSimpleBoard(){
     const isSimple = state.scoreStyle === "simple";
     document.body.classList.toggle("simple-score-mode", isSimple && !!state.started);
@@ -2275,12 +2357,13 @@ function checkWinTiebreak(){
 
     if(simpleNameA) simpleNameA.textContent = teamName("A");
     if(simpleNameB) simpleNameB.textContent = teamName("B");
-    if(simpleSetA) simpleSetA.textContent = String(state.sets?.A || 0);
-    if(simpleSetB) simpleSetB.textContent = String(state.sets?.B || 0);
-    if(simpleGameA) simpleGameA.textContent = String(state.games?.A || 0);
-    if(simpleGameB) simpleGameB.textContent = String(state.games?.B || 0);
-    if(simplePointA) simplePointA.textContent = displayPointForTeam("A");
-    if(simplePointB) simplePointB.textContent = displayPointForTeam("B");
+    renderSimpleSetHistory();
+
+    // 경기 종료 후에는 마지막 세트가 이미 세트 이력에 들어가 있으므로 GAME 중복 표시는 하지 않음
+    if(simpleGameA) simpleGameA.textContent = state.winner ? "" : String(state.games?.A || 0);
+    if(simpleGameB) simpleGameB.textContent = state.winner ? "" : String(state.games?.B || 0);
+    if(simplePointA) simplePointA.textContent = state.winner ? "" : displayPointForTeam("A");
+    if(simplePointB) simplePointB.textContent = state.winner ? "" : displayPointForTeam("B");
 
     const sk = String(currentServerKey() || "A");
     const servingTeam = sk.startsWith("B") ? "B" : "A";
@@ -2295,8 +2378,7 @@ function checkWinTiebreak(){
     document.getElementById("simpleRowA")?.classList.toggle("keyPoint", st.team === "A");
     document.getElementById("simpleRowB")?.classList.toggle("keyPoint", st.team === "B");
 
-    if(simplePointBtnA) simplePointBtnA.textContent = `${teamName("A")} 득점`;
-    if(simplePointBtnB) simplePointBtnB.textContent = `${teamName("B")} 득점`;
+    bindSimpleScoreGestures();
   }
 
   function render(full=false){
@@ -3841,9 +3923,6 @@ async function withLoadingOverlay(message, task, sub){
     // Use bindTap for match controls too (prevents mobile double-tap zoom on rapid scoring taps)
     bindTap(btnPointA, ()=> pointWon(teamForSide("L")));
     bindTap(btnPointB, ()=> pointWon(teamForSide("R")));
-    bindTap(simplePointBtnA, ()=> pointWon("A"));
-    bindTap(simplePointBtnB, ()=> pointWon("B"));
-    bindTap(simpleUndoBtn, ()=> undo());
 
     bindTap(undoBtn, ()=> undo());
 
