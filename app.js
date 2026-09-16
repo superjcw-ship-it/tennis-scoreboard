@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.02');
+    const v = (window.__TS_APP_VERSION || 'v22.25.03');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.02";
+  const APP_VERSION = "v22.25.03";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -392,6 +392,23 @@ function debounce(fn, ms=120){
   const simplePointA = $("simplePointA");
   const simplePointB = $("simplePointB");
   const simpleScoreBoard = $("simpleScoreBoard");
+
+  // watch prototype (step 6): common Apple/Galaxy watch interaction mock
+  const watchBoardView = $("watchBoardView");
+  const watchScoreBoard = $("watchScoreBoard");
+  const watchStatus = $("watchStatus");
+  const watchSideA = $("watchSideA");
+  const watchSideB = $("watchSideB");
+  const watchServeA = $("watchServeA");
+  const watchServeB = $("watchServeB");
+  const watchNameA = $("watchNameA");
+  const watchNameB = $("watchNameB");
+  const watchPointA = $("watchPointA");
+  const watchPointB = $("watchPointB");
+  const watchGameA = $("watchGameA");
+  const watchGameB = $("watchGameB");
+  const watchSetA = $("watchSetA");
+  const watchSetB = $("watchSetB");
 
   const btnPointA = $("btnPointA");
   const btnPointB = $("btnPointB");
@@ -1598,7 +1615,7 @@ function wireResetChoiceModal(){
       mode:"doubles",
       bestOf:1,
       gamesToWin:4,
-      scoreStyle:"standard", // standard | simple
+      scoreStyle:"standard", // standard | simple | watch
       // 심플모드 BREAK POINT 순번(현재 게임 내 실제 기회 순서)
       breakPointNo:0,
       breakPointTeam:null,
@@ -1683,7 +1700,7 @@ function wireResetChoiceModal(){
     if (![1,3,5].includes(s.bestOf)) s.bestOf = 1;
     // gamesToWin: 4/6만 허용 (추가)
     if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
-    if(!["standard","simple"].includes(s.scoreStyle)) s.scoreStyle = "standard";
+    if(!["standard","simple","watch"].includes(s.scoreStyle)) s.scoreStyle = "standard";
     if(!Number.isFinite(Number(s.breakPointNo)) || Number(s.breakPointNo) < 0) s.breakPointNo = 0;
     s.breakPointNo = Math.max(0, Math.floor(Number(s.breakPointNo) || 0));
     if(s.breakPointTeam !== "A" && s.breakPointTeam !== "B") s.breakPointTeam = null;
@@ -2545,6 +2562,120 @@ function checkWinTiebreak(){
     bindSimpleScoreGestures();
   }
 
+
+  // ---------- Watch prototype (step 6) ----------
+  let __watchGesture = null;
+  let __watchGestureBound = false;
+  let __watchHelpShown = false;
+
+  function flashWatchUndo(){
+    try{
+      watchScoreBoard?.classList.remove("undoFlash");
+      void watchScoreBoard?.offsetWidth;
+      watchScoreBoard?.classList.add("undoFlash");
+      setTimeout(()=>watchScoreBoard?.classList.remove("undoFlash"), 260);
+    }catch(_e){}
+  }
+
+  function bindWatchScoreGestures(){
+    if(!watchScoreBoard || __watchGestureBound) return;
+    __watchGestureBound = true;
+
+    watchScoreBoard.addEventListener("pointerdown", (e)=>{
+      if(state.scoreStyle!=="watch" || !state.started || state.winner) return;
+      const side = e.target?.closest?.(".watchSide") || null;
+      __watchGesture = {
+        id:e.pointerId,
+        x:e.clientX,
+        y:e.clientY,
+        t:Date.now(),
+        team:side?.dataset?.team || null
+      };
+      try{ watchScoreBoard.setPointerCapture(e.pointerId); }catch(_e){}
+    }, {passive:true});
+
+    watchScoreBoard.addEventListener("pointerup", (e)=>{
+      const g = __watchGesture;
+      __watchGesture = null;
+      if(!g || g.id!==e.pointerId || state.scoreStyle!=="watch" || !state.started || state.winner) return;
+      const dx=e.clientX-g.x, dy=e.clientY-g.y;
+      const ax=Math.abs(dx), ay=Math.abs(dy);
+      if(dx<=-40 && ax>Math.max(ay*1.15,40)){
+        e.preventDefault();
+        undo();
+        flashWatchUndo();
+        try{ if(navigator.vibrate) navigator.vibrate([10,18,10]); }catch(_e){}
+        return;
+      }
+      if(g.team && ax<22 && ay<22 && (Date.now()-g.t)<900){
+        e.preventDefault();
+        pointWon(g.team === "B" ? "B" : "A");
+        try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_e){}
+      }
+    }, {passive:false});
+
+    watchScoreBoard.addEventListener("pointercancel", ()=>{ __watchGesture=null; }, {passive:true});
+
+    // Watch prototype has no extra button: long-press the top status to open settings.
+    if(watchStatus && !watchStatus.__watchSettingsBound){
+      watchStatus.__watchSettingsBound = true;
+      let timer=null, sx=0, sy=0;
+      watchStatus.addEventListener("pointerdown", (e)=>{
+        if(state.scoreStyle!=="watch" || !state.started) return;
+        sx=e.clientX; sy=e.clientY;
+        timer=setTimeout(()=>{
+          timer=null;
+          try{ if(navigator.vibrate) navigator.vibrate([15,20,15]); }catch(_e){}
+          openSettings();
+        },700);
+      }, {passive:true});
+      watchStatus.addEventListener("pointermove", (e)=>{
+        if(timer && Math.hypot(e.clientX-sx,e.clientY-sy)>14){ clearTimeout(timer); timer=null; }
+      }, {passive:true});
+      const stop=()=>{ if(timer){clearTimeout(timer);timer=null;} };
+      watchStatus.addEventListener("pointerup", stop, {passive:true});
+      watchStatus.addEventListener("pointercancel", stop, {passive:true});
+    }
+  }
+
+  function renderWatchBoard(){
+    const isWatch = state.scoreStyle === "watch";
+    document.body.classList.toggle("watch-score-mode", isWatch && !!state.started);
+    if(watchBoardView) watchBoardView.style.display = isWatch ? "flex" : "none";
+    if(!isWatch) return;
+
+    // Keep the standard simple board hidden; this view uses the same scoring engine only.
+    if(simpleBoardView) simpleBoardView.style.display = "none";
+
+    if(watchNameA) watchNameA.textContent = teamName("A");
+    if(watchNameB) watchNameB.textContent = teamName("B");
+    if(watchPointA) watchPointA.textContent = state.winner ? "—" : displayPointForTeam("A");
+    if(watchPointB) watchPointB.textContent = state.winner ? "—" : displayPointForTeam("B");
+    if(watchGameA) watchGameA.textContent = String(state.games?.A || 0);
+    if(watchGameB) watchGameB.textContent = String(state.games?.B || 0);
+    if(watchSetA) watchSetA.textContent = String(state.sets?.A || 0);
+    if(watchSetB) watchSetB.textContent = String(state.sets?.B || 0);
+
+    const sk = String(currentServerKey() || "A");
+    const servingTeam = sk.startsWith("B") ? "B" : "A";
+    watchServeA?.classList.toggle("on", servingTeam === "A");
+    watchServeB?.classList.toggle("on", servingTeam === "B");
+
+    const st = getSimpleStatus();
+    if(watchStatus){
+      watchStatus.textContent = st.text;
+      watchStatus.dataset.kind = st.kind || "live";
+    }
+    watchSideA?.classList.toggle("keyPoint", st.team === "A");
+    watchSideB?.classList.toggle("keyPoint", st.team === "B");
+
+    if(!__watchHelpShown && state.started){
+      __watchHelpShown = true;
+      setTimeout(()=>showSimpleToast("워치 테스트 · 좌/우 탭=득점 · ← 스와이프=되돌리기 · 상태 길게=설정"), 300);
+    }
+    bindWatchScoreGestures();
+  }
+
   function render(full=false){
     clearErr();
 
@@ -2622,6 +2753,7 @@ function checkWinTiebreak(){
     setsB.textContent  = String(sR);
 
     renderSimpleBoard();
+    renderWatchBoard();
 
     // tiebreak superscript shown while TB at 6:6
     if(state.tiebreak && state.games.A===6 && state.games.B===6){
@@ -3222,7 +3354,10 @@ function checkWinTiebreak(){
     next.mode = modeSel.value;
     next.bestOf = parseInt(bestOfSel.value,10) || 1;
     next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 4;
-    next.scoreStyle = (scoreStyleSel?.value === "simple") ? "simple" : "standard";
+    {
+      const styleValue = scoreStyleSel?.value || "standard";
+      next.scoreStyle = ["simple","watch"].includes(styleValue) ? styleValue : "standard";
+    }
     next.noAd = !!noAdChk?.checked;
     next.tiebreakOn = !!tbOnChk?.checked;
 
