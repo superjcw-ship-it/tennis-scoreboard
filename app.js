@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.01');
+    const v = (window.__TS_APP_VERSION || 'v22.25.02');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.01";
+  const APP_VERSION = "v22.25.02";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -1400,7 +1400,24 @@ function debounce(fn, ms=120){
     _completedSaveKey = key;
     _completedSavePromise = (async ()=>{
       try{
-        const result = await saveCurrentRecord("auto_completed");
+        let result;
+        const reuseRowId = (typeof state.extendedRecordId === "string" && state.extendedRecordId) ? state.extendedRecordId : null;
+        if(reuseRowId){
+          if(!supabase) await initSupabase();
+          state.extendedRecordId = null;
+          const record = buildRecordPayload("auto_completed_extended");
+          const { data, error } = await supabase
+            .from("match_records")
+            .update({ app_version: APP_VERSION, data: record })
+            .eq("id", reuseRowId)
+            .select("id, data");
+          if(error){ state.extendedRecordId = reuseRowId; throw error; }
+          const row = pickSingleRow(data);
+          result = { rowId: row?.id || reuseRowId, record: row?.data || record };
+          saveState(state);
+        }else{
+          result = await saveCurrentRecord("auto_completed");
+        }
         _completedSavedKey = key;
         _completedSavedRowId = result?.rowId || _completedSavedRowId;
         setCompletionPhotoCache({ rowId: _completedSavedRowId || null, matchKey: key, updatedAt: new Date().toISOString() });
@@ -1422,6 +1439,9 @@ function debounce(fn, ms=120){
       if(!modal || !textEl || !state?.winner) return;
 
       textEl.textContent = `${state.winner} 승리!`;
+      if(state.scoreStyle === "simple" && Number(state.bestOf||1) < 5){
+        setTimeout(()=>showSimpleToast("한 세트 더 하려면 승리 문구를 길게 누르세요"), 280);
+      }
       updateMatchResultPhotoUI();
       modal.style.display = "block";
       modal.setAttribute("aria-hidden", "false");
@@ -1536,6 +1556,21 @@ function debounce(fn, ms=120){
         }
       });
     }
+
+    const winText = document.getElementById("matchResultWinText");
+    if(winText && !winText.__simpleExtendWired){
+      winText.__simpleExtendWired = true;
+      let lp=null, sx=0, sy=0;
+      winText.addEventListener("pointerdown", (e)=>{
+        if(state.scoreStyle!=="simple" || !state.winner) return;
+        sx=e.clientX; sy=e.clientY;
+        lp=setTimeout(()=>{ lp=null; extendCompletedSimpleMatch(); try{if(navigator.vibrate)navigator.vibrate([18,28,18]);}catch(_e){} },700);
+      }, {passive:true});
+      winText.addEventListener("pointermove", (e)=>{ if(lp && Math.hypot(e.clientX-sx,e.clientY-sy)>16){clearTimeout(lp);lp=null;} }, {passive:true});
+      const stop=()=>{if(lp){clearTimeout(lp);lp=null;}};
+      winText.addEventListener("pointerup", stop, {passive:true});
+      winText.addEventListener("pointercancel", stop, {passive:true});
+    }
     updateMatchResultPhotoUI();
   }
 
@@ -1564,6 +1599,11 @@ function wireResetChoiceModal(){
       bestOf:1,
       gamesToWin:4,
       scoreStyle:"standard", // standard | simple
+      // 심플모드 BREAK POINT 순번(현재 게임 내 실제 기회 순서)
+      breakPointNo:0,
+      breakPointTeam:null,
+      // 1세트 종료 후 심플모드에서 세트 연장 시 기존 클라우드 row 재사용
+      extendedRecordId:null,
       noAd:true,
   
       // preference: whether to play a tiebreak game at 3:3 or 6:6
@@ -1644,6 +1684,10 @@ function wireResetChoiceModal(){
     // gamesToWin: 4/6만 허용 (추가)
     if(![4,6].includes(s.gamesToWin)) s.gamesToWin = 4;
     if(!["standard","simple"].includes(s.scoreStyle)) s.scoreStyle = "standard";
+    if(!Number.isFinite(Number(s.breakPointNo)) || Number(s.breakPointNo) < 0) s.breakPointNo = 0;
+    s.breakPointNo = Math.max(0, Math.floor(Number(s.breakPointNo) || 0));
+    if(s.breakPointTeam !== "A" && s.breakPointTeam !== "B") s.breakPointTeam = null;
+    if(typeof s.extendedRecordId !== "string" || !s.extendedRecordId.trim()) s.extendedRecordId = null;
     if(s.completedSets.length > 5) s.completedSets = s.completedSets.slice(0,5);
     if(s.gameHistory.length > 13) s.gameHistory = s.gameHistory.slice(0,13);
     if(Array.isArray(pick("setGameHistories"))) {
@@ -1866,7 +1910,11 @@ function checkWinTiebreak(){
     return null;
   }
 
-  function resetPoints(){ state.points.A=0; state.points.B=0; }
+  function resetPoints(){
+    state.points.A=0; state.points.B=0;
+    state.breakPointNo = 0;
+    state.breakPointTeam = null;
+  }
 
   function resetTiebreak(){
     state.tbPoints.A=0; state.tbPoints.B=0;
@@ -2222,23 +2270,49 @@ function checkWinTiebreak(){
     return ((state.sets?.[team] || 0) + 1) >= target;
   }
 
-  function breakPointCount(){
-    if(state.tiebreak || state.winner) return {team:null, count:0};
+  function getBreakPointOpportunity(){
+    if(state.tiebreak || state.winner) return {team:null, active:false};
     const sk = String(currentServerKey() || "A");
     const serverTeam = sk.startsWith("B") ? "B" : "A";
     const receiver = serverTeam === "A" ? "B" : "A";
-    const rp = state.points?.[receiver] || 0;
-    const sp = state.points?.[serverTeam] || 0;
-    let count = 0;
-
+    const rp = Number(state.points?.[receiver] || 0);
+    const sp = Number(state.points?.[serverTeam] || 0);
+    let active = false;
     if(isNoAdEffective()){
-      if(rp >= 3 && sp >= 3) count = 1;
-      else if(rp === 3 && sp < 3) count = Math.max(1, 3 - sp);
+      active = (rp >= 3 && sp >= 3) || (rp === 3 && sp < 3);
     }else{
-      if(rp === 3 && sp < 3) count = Math.max(1, 3 - sp);
-      else if(rp >= 4 && rp === sp + 1) count = 1;
+      active = (rp === 3 && sp < 3) || (rp >= 4 && rp === sp + 1);
     }
-    return {team:receiver, count};
+    return {team:active ? receiver:null, active, serverTeam, receiver, rp, sp};
+  }
+
+  function updateBreakPointSequenceAfterPoint(scoringTeam, before){
+    try{
+      if(state.tiebreak || state.winner) return;
+      const after = getBreakPointOpportunity();
+      if(!after.active) return;
+      if(state.breakPointTeam !== after.team){
+        state.breakPointTeam = after.team;
+        state.breakPointNo = 0;
+      }
+      const beforeActive = !!(before && before.active && before.team === after.team);
+      const serverSavedButStillBreak = beforeActive && scoringTeam === after.serverTeam;
+      const newlyCreatedBreakPoint = !beforeActive;
+      if(newlyCreatedBreakPoint || serverSavedButStillBreak){
+        state.breakPointNo = Math.max(0, Number(state.breakPointNo)||0) + 1;
+      }
+      if((Number(state.breakPointNo)||0) < 1){
+        state.breakPointNo = (after.rp === 3 && after.sp < 3) ? after.sp + 1 : 1;
+      }
+    }catch(_e){}
+  }
+
+  function breakPointInfo(){
+    const bp = getBreakPointOpportunity();
+    if(!bp.active) return {team:null,no:0};
+    let no = Math.max(0, Number(state.breakPointNo)||0);
+    if(no < 1) no = (bp.rp === 3 && bp.sp < 3) ? bp.sp + 1 : 1;
+    return {team:bp.team,no};
   }
 
   function getSimpleStatus(){
@@ -2254,9 +2328,9 @@ function checkWinTiebreak(){
         return {text: state.tiebreak ? "SET POINT · TIE-BREAK" : "SET POINT", kind:"set", team};
       }
     }
-    const bp = breakPointCount();
-    if(bp.count > 0){
-      return {text: bp.count > 1 ? `${bp.count} BREAK POINTS` : "BREAK POINT", kind:"break", team:bp.team};
+    const bp = breakPointInfo();
+    if(bp.no > 0){
+      return {text:`#${bp.no} BREAK POINTS`, kind:"break", team:bp.team};
     }
     if(state.tiebreak) return {text:"TIE-BREAK", kind:"tiebreak", team:null};
     return {text:"LIVE", kind:"live", team:null};
@@ -2294,62 +2368,152 @@ function checkWinTiebreak(){
     }catch(_e){}
   }
 
+  let __simpleToastTimer = null;
+  function showSimpleToast(msg){
+    try{
+      let el = document.getElementById("simpleGestureToast");
+      if(!el){
+        el = document.createElement("div");
+        el.id = "simpleGestureToast";
+        el.className = "simpleGestureToast";
+        document.body.appendChild(el);
+      }
+      el.textContent = String(msg || "");
+      el.classList.add("show");
+      clearTimeout(__simpleToastTimer);
+      __simpleToastTimer = setTimeout(()=>el.classList.remove("show"),1450);
+    }catch(_e){}
+  }
+
+  function toggleSimpleGamesToWin(){
+    if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
+    if(state.tiebreak){ showSimpleToast("타이브레이크 중에는 게임 수를 변경할 수 없습니다"); return; }
+    const current = getGamesToWin();
+    if(current === 6){
+      const maxGames = Math.max(Number(state.games?.A||0), Number(state.games?.B||0));
+      if(maxGames >= 4){ showSimpleToast("현재 세트는 이미 4게임 이상 진행되어 4게임제로 줄일 수 없습니다"); return; }
+      state.gamesToWin = 4;
+      state.tiebreakOn = false;
+      showSimpleToast("4게임 선승제로 변경");
+    }else{
+      state.gamesToWin = 6;
+      state.tiebreakOn = true;
+      showSimpleToast("6게임 선승제로 변경");
+    }
+    if(gamesToWinSel) gamesToWinSel.value = String(state.gamesToWin);
+    saveState(state);
+    render(true);
+  }
+
+  function extendSimpleMatchFormat(){
+    if(state.scoreStyle !== "simple" || !state.started || state.winner) return;
+    const cur = Number(state.bestOf)||1;
+    const next = cur===1 ? 3 : (cur===3 ? 5 : null);
+    if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
+    state.bestOf = next;
+    if(bestOfSel) bestOfSel.value = String(next);
+    saveState(state);
+    render(true);
+    showSimpleToast(next===3 ? "3세트 2선승으로 연장" : "5세트 3선승으로 연장");
+  }
+
+
+  async function extendCompletedSimpleMatch(){
+    if(state.scoreStyle !== "simple" || !state.started || !state.winner) return;
+    const cur = Number(state.bestOf)||1;
+    const next = cur===1 ? 3 : (cur===3 ? 5 : null);
+    if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
+
+    const reuseRowId = _completedSavedRowId || null;
+    state.bestOf = next;
+    state.winner = null;
+    state.completedAt = null;
+    state.extendedRecordId = reuseRowId;
+    _lastMatchResultWinner = null;
+    _completedSaveKey = null;
+    _completedSavePromise = null;
+    _completedSavedKey = null;
+    // row id는 extendedRecordId로 넘겨 최종 완료 시 같은 row를 재사용
+    _completedSavedRowId = null;
+    startNewSet();
+    closeMatchResultModal();
+    if(bestOfSel) bestOfSel.value = String(next);
+    saveState(state);
+    render(true);
+    syncWakeLock();
+    showSimpleToast(next===3 ? "기록 유지 · 3세트 2선승으로 계속" : "기록 유지 · 5세트 3선승으로 계속");
+
+    // 이미 자동 저장된 완료 row가 있으면 즉시 '진행 중' 상태로 되돌려 중복 완료 기록 방지
+    if(reuseRowId){
+      try{
+        if(!supabase) await initSupabase();
+        const record = buildRecordPayload("match_extended");
+        await supabase.from("match_records").update({app_version:APP_VERSION,data:record}).eq("id",reuseRowId);
+      }catch(err){ console.warn("extend row update failed",err); }
+    }
+  }
+
   function bindSimpleScoreGestures(){
     if(!simpleScoreBoard || __simpleGestureBound) return;
     __simpleGestureBound = true;
+    const clearLongPress=()=>{ try{ if(__simpleGesture?.longTimer){clearTimeout(__simpleGesture.longTimer);__simpleGesture.longTimer=null;} }catch(_e){} };
 
-    simpleScoreBoard.addEventListener("pointerdown", (e)=>{
-      if(state.scoreStyle !== "simple" || !state.started) return;
-      __simpleGesture = {
-        id:e.pointerId,
-        x:e.clientX,
-        y:e.clientY,
-        t:Date.now(),
-        team:e.target?.closest?.(".simplePointCell")?.dataset?.team || null
-      };
+    simpleScoreBoard.addEventListener("pointerdown",(e)=>{
+      if(state.scoreStyle!=="simple" || !state.started) return;
+      const gameCell=e.target?.closest?.(".simpleGameCell")||null;
+      __simpleGesture={id:e.pointerId,x:e.clientX,y:e.clientY,t:Date.now(),team:e.target?.closest?.(".simplePointCell")?.dataset?.team||null,gameCell:!!gameCell,longFired:false,longTimer:null};
+      if(gameCell){
+        __simpleGesture.longTimer=setTimeout(()=>{
+          if(!__simpleGesture || __simpleGesture.id!==e.pointerId) return;
+          __simpleGesture.longFired=true;
+          toggleSimpleGamesToWin();
+          try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
+        },650);
+      }
       try{ simpleScoreBoard.setPointerCapture(e.pointerId); }catch(_e){}
-    }, {passive:true});
+    },{passive:true});
 
-    simpleScoreBoard.addEventListener("pointerup", (e)=>{
-      const g = __simpleGesture;
-      __simpleGesture = null;
-      if(!g || g.id !== e.pointerId || state.scoreStyle !== "simple" || !state.started) return;
-      const dx = e.clientX - g.x;
-      const dy = e.clientY - g.y;
-      const ax = Math.abs(dx), ay = Math.abs(dy);
+    simpleScoreBoard.addEventListener("pointermove",(e)=>{
+      const g=__simpleGesture; if(!g || g.id!==e.pointerId) return;
+      if(Math.hypot(e.clientX-g.x,e.clientY-g.y)>16) clearLongPress();
+    },{passive:true});
 
-      // 좌측 스와이프 = 직전 포인트 되돌리기 (버튼 없이 제스처만 사용)
-      if(dx <= -44 && ax > Math.max(ay * 1.15, 44)){
-        e.preventDefault();
-        undo();
-        flashSimpleUndo();
-        return;
-      }
+    simpleScoreBoard.addEventListener("pointerup",(e)=>{
+      const g=__simpleGesture; clearLongPress(); __simpleGesture=null;
+      if(!g || g.id!==e.pointerId || state.scoreStyle!=="simple" || !state.started) return;
+      if(g.longFired){e.preventDefault();return;}
+      const dx=e.clientX-g.x, dy=e.clientY-g.y, ax=Math.abs(dx), ay=Math.abs(dy);
+      if(dx<=-44 && ax>Math.max(ay*1.15,44)){ e.preventDefault(); undo(); flashSimpleUndo(); return; }
+      if(g.team && ax<18 && ay<18 && (Date.now()-g.t)<900){ e.preventDefault(); pointWon(g.team); try{if(navigator.vibrate)navigator.vibrate(10);}catch(_e){} }
+    },{passive:false});
+    simpleScoreBoard.addEventListener("pointercancel",()=>{clearLongPress();__simpleGesture=null;},{passive:true});
 
-      // 오른쪽 POINT 영역을 짧게 탭 = 해당 선수 득점
-      if(g.team && ax < 18 && ay < 18 && (Date.now()-g.t) < 900){
-        e.preventDefault();
-        pointWon(g.team);
-        try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_e){}
-      }
-    }, {passive:false});
+    if(simpleStatus && !simpleStatus.__formatLongPressBound){
+      simpleStatus.__formatLongPressBound=true;
+      let t=null,sx=0,sy=0;
+      simpleStatus.addEventListener("pointerdown",(e)=>{
+        if(state.scoreStyle!=="simple" || !state.started || state.winner) return;
+        sx=e.clientX;sy=e.clientY;
+        t=setTimeout(()=>{t=null;extendSimpleMatchFormat();try{if(navigator.vibrate)navigator.vibrate([18,28,18]);}catch(_e){}},650);
+      },{passive:true});
+      simpleStatus.addEventListener("pointermove",(e)=>{if(t && Math.hypot(e.clientX-sx,e.clientY-sy)>16){clearTimeout(t);t=null;}},{passive:true});
+      const stop=()=>{if(t){clearTimeout(t);t=null;}};
+      simpleStatus.addEventListener("pointerup",stop,{passive:true});
+      simpleStatus.addEventListener("pointercancel",stop,{passive:true});
+    }
 
-    simpleScoreBoard.addEventListener("pointercancel", ()=>{ __simpleGesture = null; }, {passive:true});
-
-    // 키보드 접근성(데스크톱 테스트): POINT 셀 Enter/Space
-    [simplePointA, simplePointB].forEach((el)=>{
-      el?.addEventListener("keydown", (e)=>{
-        if(e.key !== "Enter" && e.key !== " ") return;
-        e.preventDefault();
-        pointWon(el.dataset.team === "B" ? "B" : "A");
-      });
-    });
+    [simplePointA,simplePointB].forEach((el)=>{el?.addEventListener("keydown",(e)=>{if(e.key!=="Enter"&&e.key!==" ")return;e.preventDefault();pointWon(el.dataset.team==="B"?"B":"A");});});
   }
 
+  let __simpleHelpShown = false;
   function renderSimpleBoard(){
     const isSimple = state.scoreStyle === "simple";
     document.body.classList.toggle("simple-score-mode", isSimple && !!state.started);
     if(simpleBoardView) simpleBoardView.style.display = isSimple ? "block" : "none";
+    if(isSimple && !__simpleHelpShown && state.started){
+      __simpleHelpShown = true;
+      setTimeout(()=>showSimpleToast("POINT 탭=득점 · ← 스와이프=되돌리기 · GAME 길게=4↔6 · 상태 길게=세트 연장"),320);
+    }
 
     const boardTitle = document.querySelector("#boardCard .title");
     if(boardTitle) boardTitle.textContent = isSimple ? "Simple Scoreboard" : "Tennis Scoreboard";
@@ -2588,7 +2752,9 @@ function checkWinTiebreak(){
     }
 
     // normal game
+    const __bpBefore = getBreakPointOpportunity();
     state.points[team] += 1;
+    updateBreakPointSequenceAfterPoint(team, __bpBefore);
     clickSound();
 
     const gW = checkWinGameNormal();
@@ -4054,8 +4220,8 @@ async function withLoadingOverlay(message, task, sub){
     const setNo=document.getElementById('setNoBadge');
     if(setNo){
     setNo.textContent =
-      (state.bestOf===1) ? "1세트 1선승" :
-      (state.bestOf===5) ? "5세트 3선승" : "3세트 2선승";
+      ((state.bestOf===1) ? "1세트 1선승" :
+      (state.bestOf===5) ? "5세트 3선승" : "3세트 2선승") + ` · ${getGamesToWin()}게임`;
     }
     const noAd=document.getElementById('noAdBadge');
     if(noAd) noAd.textContent = "NO-AD: " + (state.noAd ? "ON" : "OFF");
