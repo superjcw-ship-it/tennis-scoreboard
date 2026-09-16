@@ -1228,7 +1228,193 @@
   }
 }
       
-</style>
+
+
+    /* ===== v22.25.00: Simple Scoreboard ===== */
+    .simpleBoardView{ display:none; margin-top:8px; }
+    .simpleStatusBar{
+      min-height:42px;
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      margin-bottom:8px;
+    }
+    .simpleStatus{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      padding:0 14px;
+      border-radius:12px;
+      font-size:14px;
+      font-weight:950;
+      letter-spacing:.5px;
+      color:#08110d;
+      background:var(--accent);
+      border:1px solid rgba(255,255,255,.16);
+      box-shadow:0 6px 20px rgba(0,0,0,.20);
+      white-space:nowrap;
+    }
+    .simpleStatus[data-kind="live"]{ color:var(--text); background:rgba(255,255,255,.08); }
+    .simpleStatus[data-kind="tiebreak"]{ color:#03232b; background:#43e6e2; }
+    .simpleStatus[data-kind="break"]{ color:#142000; background:#d8f53c; }
+    .simpleStatus[data-kind="set"]{ color:#071b2a; background:#68c8ff; }
+    .simpleStatus[data-kind="match"]{ color:#2a1200; background:#ffbe55; }
+    .simpleStatus[data-kind="complete"]{ color:#06210f; background:var(--accent); }
+
+    .simpleScoreBoard{
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;
+      background:linear-gradient(180deg, rgba(16,18,20,.98), rgba(12,13,15,.96));
+      box-shadow:0 16px 42px rgba(0,0,0,.28);
+    }
+    .simpleScoreHeader,
+    .simpleScoreRow{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 62px 72px minmax(92px,118px);
+      align-items:center;
+    }
+    .simpleScoreHeader{
+      min-height:28px;
+      padding:0 8px;
+      color:rgba(255,255,255,.48);
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.8px;
+      text-align:center;
+    }
+    .simpleScoreHeader > :first-child{ text-align:left; padding-left:30px; }
+    .simpleScoreRow{
+      min-height:78px;
+      border-top:1px solid rgba(255,255,255,.10);
+      transition:background .15s ease, box-shadow .15s ease;
+    }
+    .simpleScoreRow.keyPoint{ background:rgba(216,245,60,.055); }
+    .simplePlayerCell{
+      min-width:0;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:0 14px;
+      font-size:clamp(16px,4.4vw,25px);
+      font-weight:950;
+      letter-spacing:-.4px;
+      overflow:hidden;
+    }
+    .simplePlayerName{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .simpleServeDot{
+      flex:0 0 auto;
+      width:11px;
+      height:11px;
+      border-radius:50%;
+      background:rgba(255,255,255,.15);
+      box-shadow:none;
+    }
+    .simpleServeDot.on{
+      background:var(--accent);
+      box-shadow:0 0 0 4px rgba(61,220,132,.12), 0 0 16px rgba(61,220,132,.55);
+    }
+    .simpleSetCell,
+    .simpleGameCell{
+      height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:clamp(23px,6vw,36px);
+      font-weight:950;
+      border-left:1px solid rgba(255,255,255,.08);
+    }
+    .simpleGameCell{
+      background:rgba(77,163,255,.12);
+      color:#e8f4ff;
+    }
+    .simplePointCell{
+      height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-left:1px solid rgba(255,255,255,.10);
+      background:linear-gradient(180deg, #1688ff, #096fe5);
+      color:#fff;
+      font-size:clamp(34px,10vw,58px);
+      line-height:1;
+      font-weight:1000;
+      letter-spacing:-1px;
+      text-shadow:0 2px 10px rgba(0,0,0,.24);
+    }
+    .simpleActionRow{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+      margin-top:10px;
+    }
+    .simpleScoreBtn{
+      min-width:0;
+      min-height:52px;
+      border:1px solid rgba(61,220,132,.55);
+      border-radius:14px;
+      background:rgba(61,220,132,.94);
+      color:#06210f;
+      font-size:15px;
+      font-weight:950;
+      padding:0 10px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      touch-action:manipulation;
+    }
+    .simpleUndoRow{ margin-top:8px; }
+    .simpleUndoBtn{
+      width:100%;
+      min-height:42px;
+      border-radius:13px;
+      border:1px solid rgba(255,255,255,.13);
+      background:rgba(255,255,255,.055);
+      color:var(--text);
+      font-weight:900;
+      touch-action:manipulation;
+    }
+
+    body.simple-score-mode #boardCard .standardScoreOnly{ display:none !important; }
+    body.simple-score-mode #undoMiniBtn,
+    body.simple-score-mode #resetMiniBtn,
+    body.simple-score-mode #saveMiniBtn{ display:none !important; }
+    body.simple-score-mode #boardCard .topBar{ margin-bottom:4px !important; }
+    body.simple-score-mode #boardCard .title{ font-size:clamp(20px,5.4vw,28px); }
+    body.simple-score-mode #boardCard .panelInner{ overflow-y:auto; }
+
+    @media (max-width:520px){
+      .simpleStatusBar{ min-height:36px; margin-bottom:6px; }
+      .simpleStatus{ min-height:32px; padding:0 11px; font-size:12px; border-radius:10px; }
+      .simpleScoreHeader,
+      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) 46px 54px minmax(76px,92px); }
+      .simpleScoreRow{ min-height:68px; }
+      .simplePlayerCell{ gap:8px; padding:0 10px; font-size:clamp(14px,4.4vw,19px); }
+      .simpleServeDot{ width:9px; height:9px; }
+      .simpleSetCell,.simpleGameCell{ font-size:clamp(20px,5.8vw,28px); }
+      .simplePointCell{ font-size:clamp(31px,10.5vw,48px); }
+      .simpleScoreHeader{ font-size:9px; }
+      .simpleScoreHeader > :first-child{ padding-left:21px; }
+      .simpleScoreBtn{ min-height:48px; font-size:13px; }
+      .simpleUndoBtn{ min-height:40px; }
+    }
+
+    @media (orientation:landscape){
+      .simpleBoardView{ margin-top:4px; }
+      .simpleStatusBar{ min-height:32px; margin-bottom:5px; }
+      .simpleStatus{ min-height:30px; font-size:12px; }
+      .simpleScoreRow{ min-height:58px; }
+      .simpleScoreHeader,
+      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) 58px 68px minmax(90px,110px); }
+      .simplePlayerCell{ font-size:clamp(15px,2.7vw,22px); }
+      .simpleSetCell,.simpleGameCell{ font-size:clamp(20px,4vw,30px); }
+      .simplePointCell{ font-size:clamp(30px,6.4vw,46px); }
+      .simpleScoreBtn{ min-height:42px; }
+      .simpleUndoBtn{ min-height:36px; }
+    }
+
+  </style>
   
 </head>
 <body>
@@ -1268,6 +1454,14 @@
                 <option value="6">6게임</option>
               </select>
             </div>
+          </div>
+
+          <div class="field">
+            <div class="fieldLabel">스코어보드 스타일</div>
+            <select id="scoreStyle">
+              <option value="standard" selected>기본 모드</option>
+              <option value="simple">심플 모드</option>
+            </select>
           </div>
 
           <div class="setupRow2">
@@ -1360,7 +1554,44 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <div class="scoreGrid">
+        <!-- ===== Simple Scoreboard (v22.25.00) ===== -->
+        <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
+          <div class="simpleStatusBar">
+            <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
+          </div>
+          <div class="simpleScoreBoard">
+            <div class="simpleScoreHeader">
+              <div>PLAYER</div><div>SET</div><div>GAME</div><div>POINT</div>
+            </div>
+            <div id="simpleRowA" class="simpleScoreRow">
+              <div class="simplePlayerCell">
+                <span id="simpleServeA" class="simpleServeDot" aria-hidden="true"></span>
+                <span id="simpleNameA" class="simplePlayerName">A</span>
+              </div>
+              <div id="simpleSetA" class="simpleSetCell">0</div>
+              <div id="simpleGameA" class="simpleGameCell">0</div>
+              <div id="simplePointA" class="simplePointCell">0</div>
+            </div>
+            <div id="simpleRowB" class="simpleScoreRow">
+              <div class="simplePlayerCell">
+                <span id="simpleServeB" class="simpleServeDot" aria-hidden="true"></span>
+                <span id="simpleNameB" class="simplePlayerName">B</span>
+              </div>
+              <div id="simpleSetB" class="simpleSetCell">0</div>
+              <div id="simpleGameB" class="simpleGameCell">0</div>
+              <div id="simplePointB" class="simplePointCell">0</div>
+            </div>
+          </div>
+          <div class="simpleActionRow">
+            <button id="simplePointBtnA" class="simpleScoreBtn" type="button">A 득점</button>
+            <button id="simplePointBtnB" class="simpleScoreBtn" type="button">B 득점</button>
+          </div>
+          <div class="simpleUndoRow">
+            <button id="simpleUndoBtn" class="simpleUndoBtn" type="button">↶ 되돌리기</button>
+          </div>
+        </div>
+
+        <div class="scoreGrid standardScoreOnly">
           <div class="scoreCard" id="cardA">
             <div class="playerName" id="nameA">A</div>
             <div class="cornerInfo" id="cornerInfoA"></div>
@@ -1405,11 +1636,11 @@
         <span id="paperSetsA" style="display:none;"></span>
         <span id="paperSetsB" style="display:none;"></span>
 
-        <div class="midRow">
+        <div class="midRow standardScoreOnly">
           
         </div>
 
-        <div class="actionRow">
+        <div class="actionRow standardScoreOnly">
           <button id="btnPointA" class="actionBtn" type="button">⬆ 좌 득점</button>
           <button id="btnPointB" class="actionBtn" type="button">⬆ 우 득점</button>
         </div>
@@ -1417,7 +1648,7 @@
 
 
 
-        <div class="histBox">
+        <div class="histBox standardScoreOnly">
           <div class="histTitle">
             <span>세트 히스토리</span>
             <span style="color:var(--muted); font-size:12px;">현재 세트 · 게임별 포인트</span>
@@ -1636,21 +1867,21 @@
           </div>
         </div>
 
-        <div class="help" style="margin-top: 10px;">
+        <div class="help standardScoreOnly" style="margin-top: 10px;">
           * TB(6:6)에서는 GAME 숫자 우측 상단에 타이브레이크 점수가 표시됩니다.
         </div>
       </div>
     </section>
   </div>
 
-  <script src="app.js?v=v22.24.54"></script>
+  <script src="app.js?v=v22.25.00"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.24.54").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.00").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.24.53</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.00</div>
 
 </body>
 </html>
