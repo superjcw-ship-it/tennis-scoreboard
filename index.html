@@ -1230,7 +1230,7 @@
       
 
 
-    /* ===== v22.25.00: Simple Scoreboard ===== */
+    /* ===== v22.25.01: Simple Scoreboard / broadcast layout ===== */
     .simpleBoardView{ display:none; margin-top:8px; }
     .simpleStatusBar{
       min-height:42px;
@@ -1268,28 +1268,24 @@
       border-radius:18px;
       background:linear-gradient(180deg, rgba(16,18,20,.98), rgba(12,13,15,.96));
       box-shadow:0 16px 42px rgba(0,0,0,.28);
+      touch-action:pan-y;
+      user-select:none;
+      -webkit-user-select:none;
     }
-    .simpleScoreHeader,
+    .simpleScoreBoard.undoFlash{ animation:simpleUndoFlash .24s ease; }
+    @keyframes simpleUndoFlash{
+      0%{ box-shadow:0 16px 42px rgba(0,0,0,.28), inset 0 0 0 0 rgba(255,190,85,0); }
+      45%{ box-shadow:0 16px 42px rgba(0,0,0,.28), inset 0 0 0 3px rgba(255,190,85,.85); }
+      100%{ box-shadow:0 16px 42px rgba(0,0,0,.28), inset 0 0 0 0 rgba(255,190,85,0); }
+    }
     .simpleScoreRow{
       display:grid;
-      grid-template-columns:minmax(0,1fr) 62px 72px minmax(92px,118px);
-      align-items:center;
-    }
-    .simpleScoreHeader{
-      min-height:28px;
-      padding:0 8px;
-      color:rgba(255,255,255,.48);
-      font-size:10px;
-      font-weight:900;
-      letter-spacing:.8px;
-      text-align:center;
-    }
-    .simpleScoreHeader > :first-child{ text-align:left; padding-left:30px; }
-    .simpleScoreRow{
+      grid-template-columns:minmax(0,1fr) max-content 64px minmax(92px,116px);
+      align-items:stretch;
       min-height:78px;
-      border-top:1px solid rgba(255,255,255,.10);
       transition:background .15s ease, box-shadow .15s ease;
     }
+    .simpleScoreRow + .simpleScoreRow{ border-top:1px solid rgba(255,255,255,.10); }
     .simpleScoreRow.keyPoint{ background:rgba(216,245,60,.055); }
     .simplePlayerCell{
       min-width:0;
@@ -1315,66 +1311,62 @@
       background:var(--accent);
       box-shadow:0 0 0 4px rgba(61,220,132,.12), 0 0 16px rgba(61,220,132,.55);
     }
-    .simpleSetCell,
+    .simpleSetHistory{
+      display:grid;
+      grid-auto-flow:column;
+      grid-auto-columns:44px;
+      align-self:stretch;
+    }
+    .simpleSetScoreCell,
     .simpleGameCell{
       height:100%;
       display:flex;
       align-items:center;
       justify-content:center;
-      font-size:clamp(23px,6vw,36px);
+      font-size:clamp(22px,5.8vw,34px);
       font-weight:950;
       border-left:1px solid rgba(255,255,255,.08);
+      color:rgba(255,255,255,.88);
+      position:relative;
+    }
+    .simpleSetScoreCell sup{
+      font-size:.40em;
+      line-height:1;
+      margin-left:1px;
+      align-self:center;
+      transform:translateY(-.70em);
+      color:rgba(255,255,255,.65);
     }
     .simpleGameCell{
-      background:rgba(77,163,255,.12);
-      color:#e8f4ff;
+      background:rgba(62,222,216,.16);
+      color:#dffefd;
     }
     .simplePointCell{
+      appearance:none;
+      -webkit-appearance:none;
+      width:100%;
       height:100%;
+      margin:0;
+      padding:0;
       display:flex;
       align-items:center;
       justify-content:center;
+      border:0;
       border-left:1px solid rgba(255,255,255,.10);
+      border-radius:0;
       background:linear-gradient(180deg, #1688ff, #096fe5);
       color:#fff;
+      font:inherit;
       font-size:clamp(34px,10vw,58px);
       line-height:1;
       font-weight:1000;
       letter-spacing:-1px;
       text-shadow:0 2px 10px rgba(0,0,0,.24);
+      cursor:pointer;
+      touch-action:none;
+      -webkit-tap-highlight-color:transparent;
     }
-    .simpleActionRow{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:10px;
-      margin-top:10px;
-    }
-    .simpleScoreBtn{
-      min-width:0;
-      min-height:52px;
-      border:1px solid rgba(61,220,132,.55);
-      border-radius:14px;
-      background:rgba(61,220,132,.94);
-      color:#06210f;
-      font-size:15px;
-      font-weight:950;
-      padding:0 10px;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-      touch-action:manipulation;
-    }
-    .simpleUndoRow{ margin-top:8px; }
-    .simpleUndoBtn{
-      width:100%;
-      min-height:42px;
-      border-radius:13px;
-      border:1px solid rgba(255,255,255,.13);
-      background:rgba(255,255,255,.055);
-      color:var(--text);
-      font-weight:900;
-      touch-action:manipulation;
-    }
+    .simplePointCell:active{ filter:brightness(1.14); }
 
     body.simple-score-mode #boardCard .standardScoreOnly{ display:none !important; }
     body.simple-score-mode #undoMiniBtn,
@@ -1387,31 +1379,23 @@
     @media (max-width:520px){
       .simpleStatusBar{ min-height:36px; margin-bottom:6px; }
       .simpleStatus{ min-height:32px; padding:0 11px; font-size:12px; border-radius:10px; }
-      .simpleScoreHeader,
-      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) 46px 54px minmax(76px,92px); }
-      .simpleScoreRow{ min-height:68px; }
+      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) max-content 48px minmax(76px,92px); min-height:68px; }
       .simplePlayerCell{ gap:8px; padding:0 10px; font-size:clamp(14px,4.4vw,19px); }
       .simpleServeDot{ width:9px; height:9px; }
-      .simpleSetCell,.simpleGameCell{ font-size:clamp(20px,5.8vw,28px); }
+      .simpleSetHistory{ grid-auto-columns:34px; }
+      .simpleSetScoreCell,.simpleGameCell{ font-size:clamp(19px,5.5vw,27px); }
       .simplePointCell{ font-size:clamp(31px,10.5vw,48px); }
-      .simpleScoreHeader{ font-size:9px; }
-      .simpleScoreHeader > :first-child{ padding-left:21px; }
-      .simpleScoreBtn{ min-height:48px; font-size:13px; }
-      .simpleUndoBtn{ min-height:40px; }
     }
 
     @media (orientation:landscape){
       .simpleBoardView{ margin-top:4px; }
       .simpleStatusBar{ min-height:32px; margin-bottom:5px; }
       .simpleStatus{ min-height:30px; font-size:12px; }
-      .simpleScoreRow{ min-height:58px; }
-      .simpleScoreHeader,
-      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) 58px 68px minmax(90px,110px); }
+      .simpleScoreRow{ grid-template-columns:minmax(0,1fr) max-content 58px minmax(90px,110px); min-height:58px; }
       .simplePlayerCell{ font-size:clamp(15px,2.7vw,22px); }
-      .simpleSetCell,.simpleGameCell{ font-size:clamp(20px,4vw,30px); }
+      .simpleSetHistory{ grid-auto-columns:40px; }
+      .simpleSetScoreCell,.simpleGameCell{ font-size:clamp(20px,4vw,30px); }
       .simplePointCell{ font-size:clamp(30px,6.4vw,46px); }
-      .simpleScoreBtn{ min-height:42px; }
-      .simpleUndoBtn{ min-height:36px; }
     }
 
   </style>
@@ -1554,40 +1538,30 @@
 
         <div id="winnerText" style="display:none; font-weight:950; margin: 6px 0 2px;"></div>
 
-        <!-- ===== Simple Scoreboard (v22.25.00) ===== -->
+        <!-- ===== Simple Scoreboard (v22.25.01) ===== -->
         <div id="simpleBoardView" class="simpleBoardView" style="display:none;">
           <div class="simpleStatusBar">
             <div id="simpleStatus" class="simpleStatus" data-kind="live">LIVE</div>
           </div>
-          <div class="simpleScoreBoard">
-            <div class="simpleScoreHeader">
-              <div>PLAYER</div><div>SET</div><div>GAME</div><div>POINT</div>
-            </div>
+          <div id="simpleScoreBoard" class="simpleScoreBoard" aria-label="심플 스코어보드. 오른쪽 포인트를 눌러 득점하고, 보드를 왼쪽으로 스와이프하면 이전 점수로 되돌립니다.">
             <div id="simpleRowA" class="simpleScoreRow">
               <div class="simplePlayerCell">
                 <span id="simpleServeA" class="simpleServeDot" aria-hidden="true"></span>
                 <span id="simpleNameA" class="simplePlayerName">A</span>
               </div>
-              <div id="simpleSetA" class="simpleSetCell">0</div>
+              <div id="simpleSetsA" class="simpleSetHistory" aria-label="A 세트 기록"></div>
               <div id="simpleGameA" class="simpleGameCell">0</div>
-              <div id="simplePointA" class="simplePointCell">0</div>
+              <button id="simplePointA" class="simplePointCell" data-team="A" type="button" aria-label="A 득점">0</button>
             </div>
             <div id="simpleRowB" class="simpleScoreRow">
               <div class="simplePlayerCell">
                 <span id="simpleServeB" class="simpleServeDot" aria-hidden="true"></span>
                 <span id="simpleNameB" class="simplePlayerName">B</span>
               </div>
-              <div id="simpleSetB" class="simpleSetCell">0</div>
+              <div id="simpleSetsB" class="simpleSetHistory" aria-label="B 세트 기록"></div>
               <div id="simpleGameB" class="simpleGameCell">0</div>
-              <div id="simplePointB" class="simplePointCell">0</div>
+              <button id="simplePointB" class="simplePointCell" data-team="B" type="button" aria-label="B 득점">0</button>
             </div>
-          </div>
-          <div class="simpleActionRow">
-            <button id="simplePointBtnA" class="simpleScoreBtn" type="button">A 득점</button>
-            <button id="simplePointBtnB" class="simpleScoreBtn" type="button">B 득점</button>
-          </div>
-          <div class="simpleUndoRow">
-            <button id="simpleUndoBtn" class="simpleUndoBtn" type="button">↶ 되돌리기</button>
           </div>
         </div>
 
@@ -1874,14 +1848,14 @@
     </section>
   </div>
 
-  <script src="app.js?v=v22.25.00"></script>
+  <script src="app.js?v=v22.25.01"></script>
   <script>
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("./service-worker.js?v=v22.25.00").catch(()=>{});
+      navigator.serviceWorker.register("./service-worker.js?v=v22.25.01").catch(()=>{});
     }
   </script>
 
-    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.00</div>
+    <div id="versionPill" class="versionPill" style="display:none;">JS v22.25.01</div>
 
 </body>
 </html>
