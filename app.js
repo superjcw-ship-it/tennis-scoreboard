@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.07');
+    const v = (window.__TS_APP_VERSION || 'v22.25.08');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.07";
+  const APP_VERSION = "v22.25.08";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -309,10 +309,6 @@ function debounce(fn, ms=120){
   const bestOfSel = $("bestOf");
   const gamesToWinSel = $("gamesToWin");
   const scoreStyleSel = $("scoreStyle");
-  const watchSyncCodeInput = $("watchSyncCode");
-  const watchSyncSetupStatus = $("watchSyncSetupStatus");
-  const watchSyncBadge = $("watchSyncBadge");
-  const watchSyncMini = $("watchSyncMini");
   const noAdChk = $("noAd");
   const tbOnChk = $("tbOn");
 
@@ -1460,7 +1456,7 @@ function debounce(fn, ms=120){
       if(!modal || !textEl || !state?.winner) return;
 
       textEl.textContent = `${state.winner} 승리!`;
-      // v22.25.06: 승리 문구는 표시 전용. 추가 경기는 명확한 버튼으로만 처리한다.
+      // v22.25.08: 승리 문구는 표시 전용. 추가 경기는 명확한 버튼으로만 처리한다.
       const continueBtn = document.getElementById("continueMatchBtn");
       const resultBtnRow = document.querySelector("#matchResultModal .resultBtnRow");
       const canContinue = ["simple","watch"].includes(state.scoreStyle) && getBestOf() < 5;
@@ -1776,266 +1772,6 @@ function wireResetChoiceModal(){
 
   let state = loadState();
   let undoHistory = loadUndoHistory();
-
-  // ---------- Phone ↔ Watch realtime sync prototype (v22.25.07) ----------
-  const WATCH_SYNC_CODE_KEY = "tennis_watch_sync_code_v1";
-  const WATCH_SYNC_CLIENT_KEY = "tennis_watch_sync_client_v1";
-  let __watchSyncChannel = null;
-  let __watchSyncTopic = null;
-  let __watchSyncRole = null; // host | remote
-  let __watchSyncStatus = "off"; // off | connecting | connected | error
-  let __watchSyncPeerReady = false;
-  let __watchSyncApplyRemote = false;
-  let __watchSyncEnsureTimer = null;
-  let __watchSyncBroadcastTimer = null;
-  let __watchSyncLastHash = "";
-
-  function getWatchSyncClientId(){
-    let id = storage.get(WATCH_SYNC_CLIENT_KEY) || "";
-    if(!id){
-      try{ id = (crypto?.randomUUID?.() || `c-${Date.now()}-${Math.random().toString(36).slice(2,10)}`); }
-      catch(_e){ id = `c-${Date.now()}-${Math.random().toString(36).slice(2,10)}`; }
-      storage.set(WATCH_SYNC_CLIENT_KEY,id);
-    }
-    return id;
-  }
-
-  function sanitizeWatchSyncCode(v){
-    return String(v||"").replace(/\D/g,"").slice(0,6);
-  }
-
-  function getWatchSyncCode(){
-    const dom = sanitizeWatchSyncCode(watchSyncCodeInput?.value || "");
-    if(dom) return dom;
-    return sanitizeWatchSyncCode(storage.get(WATCH_SYNC_CODE_KEY) || "");
-  }
-
-  function watchSyncRoleForState(){
-    return state?.scoreStyle === "watch" ? "remote" : "host";
-  }
-
-  function setWatchSyncStatus(status, detail=""){
-    __watchSyncStatus = status || "off";
-    const code = getWatchSyncCode();
-    const role = watchSyncRoleForState();
-    const roleText = role === "remote" ? "WATCH" : "PHONE";
-    const text = status === "connected"
-      ? `${roleText} 연결됨`
-      : status === "connecting"
-        ? `${roleText} 연결 중`
-        : status === "error"
-          ? `${roleText} 오류`
-          : "WATCH OFF";
-
-    if(watchSyncBadge){
-      watchSyncBadge.style.display = (state.started && code.length===6) ? "flex" : "none";
-      watchSyncBadge.textContent = text;
-      watchSyncBadge.classList.remove("connecting","connected","error");
-      if(["connecting","connected","error"].includes(status)) watchSyncBadge.classList.add(status);
-      watchSyncBadge.title = code.length===6 ? `연동 코드 ${code}${detail?` · ${detail}`:""}` : "워치 연동 코드 없음";
-    }
-    if(watchSyncMini){
-      watchSyncMini.style.display = (state.scoreStyle==="watch" && state.started && code.length===6) ? "block" : "none";
-      watchSyncMini.textContent = status === "connected" ? "SYNC ON" : status === "connecting" ? "SYNC..." : status === "error" ? "SYNC ERR" : "SYNC";
-      watchSyncMini.classList.toggle("connected", status === "connected");
-    }
-    if(watchSyncSetupStatus && !state.started){
-      if(code.length===6){
-        watchSyncSetupStatus.textContent = `연동 코드 ${code} · 휴대폰과 워치 기기에 같은 코드를 입력하세요.`;
-      }else{
-        watchSyncSetupStatus.textContent = "코드를 비워두면 기존처럼 단독 사용합니다.";
-      }
-    }
-  }
-
-  function watchSyncStatePayload(){
-    const snap = deepClone(state);
-    return { state:snap, sentAt:Date.now(), source:getWatchSyncClientId(), appVersion:APP_VERSION };
-  }
-
-  function watchSyncHash(){
-    try{
-      return JSON.stringify({
-        mode:state.mode, bestOf:getBestOf(), gamesToWin:getGamesToWin(), noAd:state.noAd,
-        tiebreakOn:state.tiebreakOn, names:state.names, sets:state.sets, games:state.games,
-        points:state.points, tiebreak:state.tiebreak, tbPoints:state.tbPoints,
-        serverOrder:state.serverOrder, serverIndex:state.serverIndex,
-        completedSets:state.completedSets, gameHistory:state.gameHistory,
-        winner:state.winner, swapSides:state.swapSides, started:state.started,
-        breakPointNo:state.breakPointNo, breakPointTeam:state.breakPointTeam
-      });
-    }catch(_e){ return String(Date.now()); }
-  }
-
-  async function watchSyncSend(event,payload={}){
-    try{
-      if(!__watchSyncChannel || __watchSyncStatus!=="connected") return false;
-      await __watchSyncChannel.send({ type:"broadcast", event, payload:{...payload, source:getWatchSyncClientId(), ts:Date.now()} });
-      return true;
-    }catch(err){
-      console.warn("watch sync send failed",err);
-      setWatchSyncStatus("error",err?.message||String(err));
-      return false;
-    }
-  }
-
-  async function watchSyncBroadcastState(force=false){
-    if(__watchSyncRole!=="host" || !__watchSyncChannel || __watchSyncStatus!=="connected" || __watchSyncApplyRemote) return;
-    const h=watchSyncHash();
-    if(!force && h===__watchSyncLastHash) return;
-    __watchSyncLastHash=h;
-    await watchSyncSend("state",watchSyncStatePayload());
-  }
-
-  function watchSyncScheduleState(force=false){
-    if(__watchSyncRole!=="host" || __watchSyncStatus!=="connected") return;
-    clearTimeout(__watchSyncBroadcastTimer);
-    __watchSyncBroadcastTimer=setTimeout(()=>watchSyncBroadcastState(force),45);
-  }
-
-  function watchSyncApplyState(payload){
-    try{
-      if(__watchSyncRole!=="remote" || !payload?.state) return;
-      const incoming=migrateState(payload.state);
-      // 워치 기기의 표시 모드는 항상 watch로 유지하고, 경기 상태만 휴대폰을 따른다.
-      incoming.scoreStyle="watch";
-      incoming.started=true;
-      __watchSyncApplyRemote=true;
-      state=incoming;
-      undoHistory=[];
-      saveUndoHistory(undoHistory);
-      saveState(state);
-      render(true);
-    }catch(err){
-      console.warn("watch sync apply state failed",err);
-      setWatchSyncStatus("error",err?.message||String(err));
-    }finally{
-      __watchSyncApplyRemote=false;
-    }
-  }
-
-  function watchSyncApplyHostAction(payload){
-    if(__watchSyncRole!=="host" || !payload) return;
-    const action=String(payload.action||"");
-    if(action==="point"){
-      const team=payload.team==="B"?"B":"A";
-      pointWon(team);
-    }else if(action==="undo"){
-      undo();
-    }else if(action==="toggle_games"){
-      toggleSimpleGamesToWin(true);
-    }else if(action==="extend_format"){
-      extendSimpleMatchFormat(true);
-    }else if(action==="swap"){
-      state.swapSides=!state.swapSides; saveState(state); render(true);
-    }
-    watchSyncScheduleState(true);
-  }
-
-  function watchSyncPresenceUpdate(){
-    try{
-      if(!__watchSyncChannel) return;
-      const p=__watchSyncChannel.presenceState?.() || {};
-      const rows=[];
-      Object.values(p).forEach(arr=>Array.isArray(arr)&&rows.push(...arr));
-      const hasHost=rows.some(x=>x?.role==="host");
-      const hasRemote=rows.some(x=>x?.role==="remote");
-      __watchSyncPeerReady = hasHost && hasRemote;
-      setWatchSyncStatus("connected", __watchSyncPeerReady ? "상대 기기 확인" : "상대 기기 대기");
-    }catch(_e){
-      setWatchSyncStatus("connected");
-    }
-  }
-
-  async function watchSyncDisconnect(){
-    clearTimeout(__watchSyncEnsureTimer);
-    clearTimeout(__watchSyncBroadcastTimer);
-    const ch=__watchSyncChannel;
-    __watchSyncChannel=null; __watchSyncTopic=null; __watchSyncRole=null; __watchSyncPeerReady=false; __watchSyncLastHash="";
-    if(ch && supabase){ try{ await supabase.removeChannel(ch); }catch(_e){} }
-    setWatchSyncStatus("off");
-  }
-
-  async function watchSyncConnect(){
-    const code=getWatchSyncCode();
-    if(!state.started || code.length!==6){ await watchSyncDisconnect(); return; }
-    const role=watchSyncRoleForState();
-    const topic=`tennis-watch-${code}`;
-    if(__watchSyncChannel && __watchSyncTopic===topic && __watchSyncRole===role) return;
-
-    await watchSyncDisconnect();
-    setWatchSyncStatus("connecting");
-    try{
-      if(!supabase) await initSupabase();
-      const clientId=getWatchSyncClientId();
-      const ch=supabase.channel(topic,{ config:{ broadcast:{self:false}, presence:{key:clientId} } });
-      __watchSyncChannel=ch; __watchSyncTopic=topic; __watchSyncRole=role;
-
-      ch.on("broadcast",{event:"state"},({payload})=>{
-        if(payload?.source===clientId) return;
-        watchSyncApplyState(payload);
-      });
-      ch.on("broadcast",{event:"action"},({payload})=>{
-        if(payload?.source===clientId) return;
-        watchSyncApplyHostAction(payload);
-      });
-      ch.on("broadcast",{event:"request_state"},({payload})=>{
-        if(payload?.source===clientId) return;
-        if(__watchSyncRole==="host") watchSyncBroadcastState(true);
-      });
-      ch.on("presence",{event:"sync"},watchSyncPresenceUpdate);
-      ch.on("presence",{event:"join"},watchSyncPresenceUpdate);
-      ch.on("presence",{event:"leave"},watchSyncPresenceUpdate);
-
-      ch.subscribe(async(status)=>{
-        if(ch!==__watchSyncChannel) return;
-        if(status==="SUBSCRIBED"){
-          setWatchSyncStatus("connected","채널 연결");
-          try{ await ch.track({role,clientId,appVersion:APP_VERSION,onlineAt:new Date().toISOString()}); }catch(_e){}
-          watchSyncPresenceUpdate();
-          if(role==="host") watchSyncBroadcastState(true);
-          else watchSyncSend("request_state",{role:"remote"});
-        }else if(status==="CHANNEL_ERROR" || status==="TIMED_OUT"){
-          setWatchSyncStatus("error",status);
-        }
-      });
-    }catch(err){
-      console.error("watch sync connect failed",err);
-      setWatchSyncStatus("error",err?.message||String(err));
-    }
-  }
-
-  function watchSyncEnsureForCurrentState(){
-    clearTimeout(__watchSyncEnsureTimer);
-    __watchSyncEnsureTimer=setTimeout(()=>watchSyncConnect(),80);
-  }
-
-  function watchSyncRemoteActive(){
-    return __watchSyncRole==="remote" && __watchSyncStatus==="connected" && getWatchSyncCode().length===6;
-  }
-
-  async function watchSyncRemoteAction(action,extra={}){
-    if(!watchSyncRemoteActive()) return false;
-    return await watchSyncSend("action",{action,...extra});
-  }
-
-  function initWatchSyncSetupUI(){
-    try{
-      const saved=sanitizeWatchSyncCode(storage.get(WATCH_SYNC_CODE_KEY)||"");
-      if(watchSyncCodeInput) watchSyncCodeInput.value=saved;
-      setWatchSyncStatus("off");
-      if(watchSyncCodeInput && !watchSyncCodeInput.__watchSyncBound){
-        watchSyncCodeInput.__watchSyncBound=true;
-        watchSyncCodeInput.addEventListener("input",()=>{
-          const v=sanitizeWatchSyncCode(watchSyncCodeInput.value);
-          if(watchSyncCodeInput.value!==v) watchSyncCodeInput.value=v;
-          storage.set(WATCH_SYNC_CODE_KEY,v);
-          setWatchSyncStatus("off");
-        });
-      }
-    }catch(_e){}
-  }
-
   // ✅ Cloud save용: 현재 경기 상태 스냅샷 노출
   try{
     window.__TS_SNAPSHOT = () => ({
@@ -2708,24 +2444,24 @@ function checkWinTiebreak(){
     }catch(_e){}
   }
 
-  function toggleSimpleGamesToWin(skipConfirm=false){
+  function toggleSimpleGamesToWin(){
     if(!["simple","watch"].includes(state.scoreStyle) || !state.started || state.winner) return;
     if(state.tiebreak){ showSimpleToast("타이브레이크 중에는 게임 수를 변경할 수 없습니다"); return; }
     const current=getGamesToWin(), target=current===6?4:6;
     if(target===4 && Math.max(Number(state.games?.A||0),Number(state.games?.B||0))>=4){
       showSimpleToast("현재 세트는 이미 4게임 이상 진행되어 4게임제로 줄일 수 없습니다"); return;
     }
-    if(!skipConfirm && !window.confirm(`${target}게임 선승제로 변경할까요?`)) return;
+    if(!window.confirm(`${target}게임 선승제로 변경할까요?`)) return;
     syncRuntimeFormat(getBestOf(), target, target===6);
     if(gamesToWinSel) gamesToWinSel.value=String(target);
     saveState(state); render(true); showSimpleToast(`${target}게임 선승제로 변경`);
   }
 
-  function extendSimpleMatchFormat(skipConfirm=false){
+  function extendSimpleMatchFormat(){
     if(!["simple","watch"].includes(state.scoreStyle) || !state.started || state.winner) return;
     const cur=getBestOf(), next=cur===1?3:(cur===3?5:null);
     if(!next){ showSimpleToast("이미 5세트 3선승 방식입니다"); return; }
-    if(!skipConfirm && !window.confirm(`${next===3?"3세트 2선승":"5세트 3선승"}으로 변경할까요?`)) return;
+    if(!window.confirm(`${next===3?"3세트 2선승":"5세트 3선승"}으로 변경할까요?`)) return;
     syncRuntimeFormat(next, getGamesToWin(), !!state.tiebreakOn);
     if(bestOfSel) bestOfSel.value=String(next);
     saveState(state); render(true);
@@ -2848,7 +2584,7 @@ function checkWinTiebreak(){
   }
 
 
-  // ---------- Watch prototype (step 6) ----------
+  // ---------- Standalone watch prototype (no phone realtime sync) ----------
   let __watchGesture = null;
   let __watchGestureBound = false;
   let __watchHelpShown = false;
@@ -2907,13 +2643,8 @@ function checkWinTiebreak(){
         __watchGesture.longTimer = setTimeout(()=>{
           if(!__watchGesture || __watchGesture.id!==e.pointerId) return;
           __watchGesture.longFired = true;
-          if(metaAction === 'game') {
-            if(watchSyncRemoteActive()) watchSyncRemoteAction("toggle_games");
-            else toggleSimpleGamesToWin();
-          } else if(metaAction === 'set') {
-            if(watchSyncRemoteActive()) watchSyncRemoteAction("extend_format");
-            else extendSimpleMatchFormat();
-          }
+          if(metaAction === 'game') toggleSimpleGamesToWin();
+          else if(metaAction === 'set') extendSimpleMatchFormat();
           try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
         },650);
       }
@@ -2937,8 +2668,7 @@ function checkWinTiebreak(){
       const ax=Math.abs(dx), ay=Math.abs(dy);
       if(dx<=-40 && ax>Math.max(ay*1.15,40)){
         e.preventDefault();
-        if(watchSyncRemoteActive()) watchSyncRemoteAction("undo");
-        else undo();
+        undo();
         flashWatchUndo();
         try{ if(navigator.vibrate) navigator.vibrate([10,18,10]); }catch(_e){}
         return;
@@ -2950,9 +2680,7 @@ function checkWinTiebreak(){
 
       if(g.team && ax<22 && ay<22 && (Date.now()-g.t)<900){
         e.preventDefault();
-        const team=g.team === "B" ? "B" : "A";
-        if(watchSyncRemoteActive()) watchSyncRemoteAction("point",{team});
-        else pointWon(team);
+        pointWon(g.team === "B" ? "B" : "A");
         try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_e){}
       }
     }, {passive:false});
@@ -2972,8 +2700,7 @@ function checkWinTiebreak(){
         sx=e.clientX; sy=e.clientY;
         timer=setTimeout(()=>{
           timer=null;
-          if(watchSyncRemoteActive()) watchSyncRemoteAction("extend_format");
-          else extendSimpleMatchFormat();
+          extendSimpleMatchFormat();
           try{ if(navigator.vibrate) navigator.vibrate([18,28,18]); }catch(_e){}
         },650);
       }, {passive:true});
@@ -3019,7 +2746,7 @@ function checkWinTiebreak(){
 
     if(!__watchHelpShown && state.started){
       __watchHelpShown = true;
-      setTimeout(()=>showSimpleToast("워치 · 좌/우 탭=득점 · ← 스와이프=되돌리기 · GAME/SET 길게=형식 변경"), 300);
+      setTimeout(()=>showSimpleToast("워치 독립형 · 좌/우 탭=득점 · ← 스와이프=되돌리기 · GAME/SET 길게=형식 변경"), 300);
     }
     bindWatchScoreGestures();
   }
@@ -3153,7 +2880,7 @@ function checkWinTiebreak(){
         _lastMatchResultWinner = state.winner;
       }
       const modalEl = document.getElementById("matchResultModal");
-      if(!watchSyncRemoteActive() && modalEl && modalEl.style.display !== "block"){
+      if(modalEl && modalEl.style.display !== "block"){
         setTimeout(()=>{ try{ showMatchResultModal(); }catch(_e){} }, 0);
       }
       Promise.resolve().then(()=>ensureCompletedMatchSaved()).catch(err=>console.error("auto save failed:", err));
@@ -3178,11 +2905,6 @@ function checkWinTiebreak(){
     prev.pointL = pL; prev.pointR = pR;
     prev.gamesL = gL; prev.gamesR = gR;
     prev.setsL  = sL; prev.setsR  = sR;
-
-    // 워치 연동: 경기 시작 상태에서는 채널 연결을 유지하고, 휴대폰(host)은 최신 점수를 전송한다.
-    watchSyncEnsureForCurrentState();
-    watchSyncScheduleState(false);
-    setWatchSyncStatus(__watchSyncStatus);
   }
 
   // ---------- Gameplay actions ----------
@@ -3681,7 +3403,6 @@ function checkWinTiebreak(){
 
   function showSetup(){
     state.started = false;
-    watchSyncDisconnect();
     saveState(state);
     render(true);
     syncWakeLock();
@@ -3709,8 +3430,9 @@ function checkWinTiebreak(){
     next.bestOf = parseInt(bestOfSel.value,10) || 1;
     next.gamesToWin = parseInt(gamesToWinSel?.value, 10) || 4;
     {
-      const styleValue = scoreStyleSel?.value || "standard";
-      next.scoreStyle = ["simple","watch"].includes(styleValue) ? styleValue : "standard";
+      // START 시점의 설정 화면 선택값을 최종 기준으로 확정한다.
+      const styleValue = String(scoreStyleSel?.value || state.scoreStyle || "standard");
+      next.scoreStyle = ["standard","simple","watch"].includes(styleValue) ? styleValue : "standard";
     }
     next.noAd = !!noAdChk?.checked;
     next.tiebreakOn = !!tbOnChk?.checked;
@@ -4454,6 +4176,20 @@ async function withLoadingOverlay(message, task, sub){
       render(true);
     });
 
+    // 스코어보드 스타일은 설정 화면에서 선택하는 즉시 state에 고정한다.
+    // 이렇게 해야 회전/리렌더링/다른 설정 변경이 발생해도 선택값이 기본 모드로 되돌아가지 않는다.
+    scoreStyleSel?.addEventListener("change", ()=>{
+      const v = String(scoreStyleSel.value || "standard");
+      state.scoreStyle = ["standard","simple","watch"].includes(v) ? v : "standard";
+      saveState(state);
+      if(!state.started){
+        // 설정 화면에서는 값만 확정하고 화면 전환은 START 시점에 수행한다.
+        scoreStyleSel.value = state.scoreStyle;
+      }else{
+        render(true);
+      }
+    });
+
     bestOfSel?.addEventListener("change", ()=>{
       const v=parseInt(bestOfSel.value,10)||1;
       syncRuntimeFormat([1,3,5].includes(v)?v:1, getGamesToWin(), !!state.tiebreakOn);
@@ -4873,7 +4609,6 @@ async function withLoadingOverlay(message, task, sub){
 try{
     bindEvents();
     initSetupDefaults();
-    try{ initWatchSyncSetupUI(); }catch(_e){}
     
     // v22.17: wire top buttons + modals
     try{ wireSettingsModal_v2217(); }catch(_e){}
