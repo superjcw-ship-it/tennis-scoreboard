@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.08');
+    const v = (window.__TS_APP_VERSION || 'v22.25.09');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.08";
+  const APP_VERSION = "v22.25.09";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -1456,7 +1456,7 @@ function debounce(fn, ms=120){
       if(!modal || !textEl || !state?.winner) return;
 
       textEl.textContent = `${state.winner} 승리!`;
-      // v22.25.08: 승리 문구는 표시 전용. 추가 경기는 명확한 버튼으로만 처리한다.
+      // v22.25.09: 승리 문구는 표시 전용. 추가 경기는 명확한 버튼으로만 처리한다.
       const continueBtn = document.getElementById("continueMatchBtn");
       const resultBtnRow = document.querySelector("#matchResultModal .resultBtnRow");
       const canContinue = ["simple","watch"].includes(state.scoreStyle) && getBestOf() < 5;
@@ -3613,6 +3613,44 @@ async function withLoadingOverlay(message, task, sub){
     }
   }
 
+  function _recordSavedTimeMs(row){
+    try{
+      const d = _maybeParseJson(row?.data) || {};
+      const s = _maybeParseJson(d?.state) || {};
+      const wear = _maybeParseJson(d?.wear) || {};
+      const parseMs = (v)=>{
+        if(!v) return 0;
+        const n = new Date(v).getTime();
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      // v0.3.3+ Wear OS: actual time the user pressed 결과 저장 on the watch.
+      const localWear = parseMs(wear?.localSavedAt || d?.local_saved_at);
+      if(localWear) return localWear;
+
+      const isWear = (wear?.source === 'wear_standalone') || (s?.source === 'wear_standalone');
+      // v0.3.2 and older Wear records did not preserve local save-button time.
+      // Use local match completion time instead of the later server upload time.
+      if(isWear){
+        const completed = parseMs(d?.completed_at);
+        if(completed) return completed;
+      }
+
+      const saved = parseMs(d?.saved_at);
+      if(saved) return saved;
+      const completed = parseMs(d?.completed_at);
+      if(completed) return completed;
+      return parseMs(row?.created_at);
+    }catch(_e){
+      return row?.created_at ? (new Date(row.created_at).getTime() || 0) : 0;
+    }
+  }
+
+  function _recordSavedTimeText(row){
+    const ms = _recordSavedTimeMs(row);
+    return ms ? new Date(ms).toLocaleString() : '';
+  }
+
   function dedupeCloudRows(rows){
     if(!Array.isArray(rows)) return [];
     const keep = new Map();
@@ -3641,9 +3679,7 @@ async function withLoadingOverlay(message, task, sub){
       keep.set(key, prev ? chooseBetter(prev, row) : row);
     });
     return [...passthrough, ...keep.values()].sort((a,b)=>{
-      const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
-      const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
-      return bt - at;
+      return _recordSavedTimeMs(b) - _recordSavedTimeMs(a);
     });
   }
 
@@ -3719,7 +3755,7 @@ async function withLoadingOverlay(message, task, sub){
           const s = d.state; // 우리가 저장한 실제 상태
           const inProg = _isInProgressState(s);
   
-          const created = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+          const created = _recordSavedTimeText(r);
           const mode = s?.mode || d.match?.mode || 'unknown';
   
           // 점수 요약(있으면 표시)
@@ -3867,7 +3903,7 @@ async function withLoadingOverlay(message, task, sub){
     const d = _maybeParseJson(summaryRow?.data) || {};
     const s = _maybeParseJson(d.state) || {};
     const created = summaryRow?.created_at ? new Date(summaryRow.created_at).toLocaleString() : '-';
-    const savedAt = d.saved_at ? new Date(d.saved_at).toLocaleString() : created;
+    const savedAt = _recordSavedTimeText(summaryRow) || created;
   
     const mode = s.mode || d.match?.mode || 'unknown';
     const names = s.names || {};
