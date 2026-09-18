@@ -26,7 +26,7 @@ async function initSupabase() {
 function updateSettingsVersionText(){
   try{
     const el=document.getElementById('settingsVersionText');
-    const v = (window.__TS_APP_VERSION || 'v22.25.09');
+    const v = (window.__TS_APP_VERSION || 'v22.25.10');
     if(el) el.textContent = "버전 정보 : " + v;
   }catch(_e){}
 }
@@ -39,7 +39,7 @@ function updateSettingsVersionText(){
   "use strict";
 
   // ✅ NOTE: 이 파일 세트(app.js / index.html / service-worker.js)는 v22 최종본
-  const APP_VERSION = "v22.25.09";
+  const APP_VERSION = "v22.25.10";
   // expose for non-module helper functions / UI
   try{ window.__TS_APP_VERSION = APP_VERSION; }catch(_e){}
 
@@ -3591,7 +3591,15 @@ async function withLoadingOverlay(message, task, sub){
   function getCloudRowMatchKey(row){
     const d = _maybeParseJson(row?.data) || {};
     const s = _maybeParseJson(d?.state) || {};
+    const wear = _maybeParseJson(d?.wear) || {};
     if(_isInProgressState(s)) return null;
+
+    // v22.25.10: Wear OS standalone matches have a real per-match UUID.
+    // Use it before the legacy score-based fallback so two different watch matches
+    // with identical score/settings are never collapsed into one row.
+    const explicitMatchId = wear?.matchId || s?.matchId || d?.matchId || d?.match_id || null;
+    if(explicitMatchId) return `matchId:${String(explicitMatchId)}`;
+
     return d?.match_key || s?.matchKey || getCompletedMatchSaveKeyFromSnapshot?.(s, d) || null;
   }
 
